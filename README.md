@@ -25,8 +25,8 @@
 [//]: # (        • <a href="https://arxiv.org/pdf/2406.01078" target='_blank'>CVPR 2025</a> •)
 [//]: # (    </h4>)
 [//]: # (</div>)
-    
-[[Project Page]]([https://github.com/yuxin-jiang/Anomagic](https://yuxin-jiang.github.io/Anomagic)) [[Paper]](https://arxiv.org/abs/2501.12345) [[HuggingFace Demo (coming soon)]](https://huggingface.co/spaces/yuxin-jiang/Anomagic)
+
+[[Project Page]](https://github.com/yuxin-jiang/Anomagic) [[Paper]](https://arxiv.org/abs/2501.12345) [[HuggingFace Demo (coming soon)]](https://huggingface.co/spaces/yuxin-jiang/Anomagic)
 
 ![teaser](imgs/teaser_anomagic.png)
 
