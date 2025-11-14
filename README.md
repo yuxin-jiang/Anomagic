@@ -28,7 +28,7 @@
 
 [[Project Page]](https://yuxin-jiang.github.io/Anomagic) [[Paper]](https://arxiv.org/abs/2501.12345) [[HuggingFace Demo (coming soon)]](https://huggingface.co/spaces/yuxin-jiang/Anomagic)
 
-![teaser](imgs/teaser_anomagic.png)
+![Framework](images/method.png)
 
 [//]: # (<div style="text-align:center">)
 
@@ -131,29 +131,18 @@ Our pipeline generates high-fidelity synthetic anomaly images across diverse cat
 ### Industrial Datasets (VisA & MVTecAD)
 Synthesized anomalies on objects like PCBs and capsules, with precise defect localization.
 
-![VisA Example](imgs/visa_pcb_anomaly.png)  
-*VisA: PCB with solder defect*
-
-![MVTecAD Example](imgs/mvtec_capsule_anomaly.png)  
-*MVTecAD: Capsule with contamination*
+![VisA & MVTecAD Example](images/zero_mvtec_visa.png)  
 
 ### Medical Imaging
 Anomalies in brain tumors (BraTS) and retinal scans (OCT), preserving anatomical fidelity.
 
-![BraTS Example](imgs/brats_tumor_anomaly.png)  
-*BraTS [deVerdier et al. 2024]: Brain MRI with enhanced tumor region*
-
-![OCT Example](imgs/oct_retina_anomaly.png)  
-*OCT [Kermany et al. 2018]: Retinal OCT with macular edema*
+![Medical Example](images/zero_medical.png)  
+*BraTS and OCT [deVerdier et al. 2024, Kermany et al. 2018]: Brain MRI and Retinal OCT with enhanced tumor region*
 
 ### Web-Crawled Real-World Objects
 Diverse everyday items with realistic anomalies, sourced from web images.
 
-![Web Example 1](imgs/web_table_faded.png)  
-*Table surface with fading/discoloration*
-
-![Web Example 2](imgs/web_bottle_crack.png)  
-*Bottle with structural crack*
+![Web Example](images/zero_web.png)  
 
 For complete code examples and tunable parameters (e.g., prompts, scales, masks), refer to the provided Jupyter notebooks:
 
