@@ -38,6 +38,64 @@
   <script src="static/js/bulma-carousel.min.js"></script>
   <script src="static/js/bulma-slider.min.js"></script>
   <script src="static/js/index.js"></script>
+
+  <style>
+    /* 翻面卡片样式 */
+    .flip-card {
+      background-color: transparent;
+      width: 100%;
+      height: 500px; /* 可根据图片比例调整 */
+      perspective: 1000px;
+      margin: 0 auto;
+    }
+
+    .flip-card-inner {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      text-align: center;
+      transition: transform 0.8s;
+      transform-style: preserve-3d;
+    }
+
+    .flip-card:hover .flip-card-inner {
+      transform: rotateY(180deg);
+    }
+
+    .flip-card-front, .flip-card-back {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .flip-card-front img, .flip-card-back img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .flip-card-back {
+      transform: rotateY(180deg);
+    }
+
+    .card-caption {
+      margin-top: 1rem;
+      font-weight: bold;
+      font-size: 1.2rem;
+    }
+
+    @media (max-width: 768px) {
+      .flip-card {
+        height: 300px;
+      }
+    }
+  </style>
 </head>
 <body>
 
@@ -119,7 +177,7 @@
 </div>
 </section>
 
-<!-- Abstract Section (Moved Before Method Image) -->
+<!-- Abstract Section -->
 <section class="section hero is-light">
   <div class="container is-max-desktop">
     <div class="columns is-centered has-text-centered">
@@ -138,11 +196,25 @@
   </div>
 </section>
 
-<!-- Method Image (Moved After Abstract) -->
+<!-- 可翻面的方法与数据集展示 -->
 <section class="hero teaser">
   <div class="container is-max-desktop">
     <div class="hero-body">
-      <img src="static/images/method.png" alt="Anomagic Method" id="teaser" style="width: 100%; object-fit: cover;"/>
+      <div class="flip-card">
+        <div class="flip-card-inner">
+          <!-- 正面：方法框架 -->
+          <div class="flip-card-front">
+            <img src="static/images/method.png" alt="Anomagic Method" id="teaser"/>
+            <div class="card-caption">Overall framework of Anomagic</div>
+          </div>
+          <!-- 背面：数据集概览 -->
+          <div class="flip-card-back">
+            <img src="static/images/dataset.png" alt="AnomVerse Overview" id="dataset"/>
+            <div class="card-caption">Overview of AnomVerse</div>
+          </div>
+        </div>
+      </div>
+      <p class="has-text-centered mt-4 is-italic">Hover over the image to flip between method framework and dataset overview</p>
     </div>
   </div>
 </section>
