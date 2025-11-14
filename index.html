@@ -136,7 +136,7 @@
   </div>
 </section>
 
-<!-- Method & Dataset Section (与Results部分格式相同) -->
+<!-- Method & Dataset Section -->
 <section class="hero is-light is-small">
   <div class="hero-body">
     <div class="container">
@@ -150,7 +150,8 @@
               <p class="is-size-6 has-text-grey">The crossmodal prompt-driven zero-shot anomaly generation pipeline with contrastive refinement.</p>
             </div>
             <div class="column is-full has-text-centered">
-              <img src="static/images/method.png" alt="Anomagic Framework" style="width: 80%; max-width: 800px;"/>
+              <!-- 统一设置最大高度，保持图片比例的同时控制大小 -->
+              <img src="static/images/method.png" alt="Anomagic Framework" style="max-height: 400px; width: auto; object-fit: contain;"/>
             </div>
           </div>
         </div>
@@ -163,7 +164,8 @@
               <p class="is-size-6 has-text-grey">A comprehensive dataset with 12,987 anomaly-mask-caption triplets from 13 public datasets.</p>
             </div>
             <div class="column is-full has-text-centered">
-              <img src="static/images/dataset.png" alt="AnomVerse Dataset" style="width: 80%; max-width: 800px;"/>
+              <!-- 与method图使用相同的最大高度，实现等比例缩放且大小相近 -->
+              <img src="static/images/dataset.png" alt="AnomVerse Dataset" style="max-height: 400px; width: auto; object-fit: contain;"/>
             </div>
           </div>
         </div>
