@@ -1,7 +1,5 @@
 <div align="left">
 <br>
-## 🌟 News
-🚀 **Code updated with memory optimization!** Now you can run the code on under **30GB GPU memory** without issues.
 <br>
 </div>
 <div align="center">
