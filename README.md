@@ -28,7 +28,7 @@
 
 [[Project Page]](https://yuxin-jiang.github.io/Anomagic) [[Paper]](https://arxiv.org/abs/2501.12345) [[HuggingFace Demo (coming soon)]](https://huggingface.co/spaces/yuxin-jiang/Anomagic)
 
-![Framework](images/method.png)
+![Framework](static/images/method.png)
 
 [//]: # (<div style="text-align:center">)
 
@@ -131,18 +131,18 @@ Our pipeline generates high-fidelity synthetic anomaly images across diverse cat
 ### Industrial Datasets (VisA & MVTecAD)
 Synthesized anomalies on objects like PCBs and capsules, with precise defect localization.
 
-![VisA & MVTecAD Example](images/zero_mvtec_visa.png)  
+![VisA & MVTecAD Example](static/images/zero_mvtec_visa.png)  
 
 ### Medical Imaging
 Anomalies in brain tumors (BraTS) and retinal scans (OCT), preserving anatomical fidelity.
 
-![Medical Example](images/zero_medical.png)  
+![Medical Example](static/images/zero_medical.png)  
 *BraTS and OCT [deVerdier et al. 2024, Kermany et al. 2018]: Brain MRI and Retinal OCT with enhanced tumor region*
 
 ### Web-Crawled Real-World Objects
 Diverse everyday items with realistic anomalies, sourced from web images.
 
-![Web Example](images/zero_web.png)  
+![Web Example](static/images/zero_web.png)  
 
 For complete code examples and tunable parameters (e.g., prompts, scales, masks), refer to the provided Jupyter notebooks:
 
