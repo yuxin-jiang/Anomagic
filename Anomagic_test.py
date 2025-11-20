@@ -1,7 +1,4 @@
 import os
-
-os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import time
 import json
 import random
@@ -15,442 +12,580 @@ import argparse
 from metauas import MetaUAS, set_random_seed, normalize, apply_ad_scoremap, read_image_as_tensor, safely_load_state_dict
 
 
-class BatchAnomalyGenerator:
-    def __init__(self, device="cuda:0"):
-        self.device = torch.device(device if torch.cuda.is_available() else "cpu")
-        self.ip_model = None
-        self.quality_model = None
-        self.dataset_info = None
-        self.all_samples = []
+class Timer:
+    """High-precision timing utility class"""
+    def __init__(self):
+        self.reset()
+    def reset(self):
+        self.start_time = time.perf_counter()
+        self.last_checkpoint = self.start_time
+        self.total_elapsed = 0.0
+    def checkpoint(self, message=""):
+        current_time = time.perf_counter()
+        elapsed = current_time - self.last_checkpoint
+        self.total_elapsed = current_time - self.start_time
+        self.last_checkpoint = current_time
+        print(f"{message[:30]:<30} | Elapsed this step: {elapsed:.2f}s | Total elapsed: {self.total_elapsed:.2f}s")
+        return elapsed
 
-    def load_models(self, ip_ckpt, ip_ckpt_1, base_model_path, vae_model_path, image_encoder_path,
-                    quality_model_path=None, dataset_info_path=None):
-        """Load all required models and dataset information."""
-        noise_scheduler = DDIMScheduler(
-            num_train_timesteps=1000,
-            beta_start=0.00085,
-            beta_end=0.012,
-            beta_schedule="scaled_linear",
-            clip_sample=False,
-            set_alpha_to_one=False,
-            steps_offset=1,
-        )
 
-        vae = AutoencoderKL.from_pretrained(vae_model_path).to(device=self.device, dtype=torch.float16)
-
-        pipe = StableDiffusionInpaintPipelineLegacy.from_pretrained(
-            base_model_path,
-            torch_dtype=torch.float16,
-            scheduler=noise_scheduler,
-            vae=vae,
-            feature_extractor=None,
-            safety_checker=None
-        ).to(self.device)
-
-        pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
-
-        # Verify image_encoder_path is a valid local directory
-        if not os.path.isdir(image_encoder_path):
-            raise ValueError(f"Image encoder path {image_encoder_path} is not a valid directory")
-        print(f"Loading image encoder from local path: {image_encoder_path}")
-
-        try:
-            self.ip_model = IPAdapter(pipe, image_encoder_path, ip_ckpt, ip_ckpt_1, self.device)
-        except Exception as e:
-            print(f"Error loading IPAdapter with image_encoder_path {image_encoder_path}: {str(e)}")
-            raise
-
-        if quality_model_path:
-            set_random_seed(1)
-            self.quality_model = MetaUAS(
-                'efficientnet-b4',
-                'unet',
-                5,
-                5,
-                3,
-                'sa',
-                'cat'
-            )
-            self.quality_model = safely_load_state_dict(self.quality_model, quality_model_path)
-            self.quality_model.to(self.device).eval()
-
-        if dataset_info_path:
-            try:
-                with open(dataset_info_path, 'r') as f:
-                    self.dataset_info = json.load(f)
-
-                self.all_samples = []
-                for dataset in self.dataset_info.get('datasets', []):
-                    self.all_samples.extend(dataset.get('images', []))
-
-                if not self.all_samples:
-                    raise ValueError("No valid sample data found in JSON file")
-                print(f"Loaded dataset information with {len(self.all_samples)} samples")
-            except Exception as e:
-                raise ValueError(f"Failed to load dataset information: {str(e)}")
-
-    def _get_random_references(self, num_samples=1, datasets_root=None):
-        """Randomly select reference samples from JSON data."""
-        if not self.all_samples:
-            raise ValueError("No available sample data")
-
-        if num_samples > len(self.all_samples):
-            num_samples = len(self.all_samples)
-            print(f"Warning: Requested reference samples exceed available samples, using {num_samples} samples")
-
-        selected_samples = random.sample(self.all_samples, num_samples)
-
-        processed_samples = []
-        for sample in selected_samples:
-            image_path = os.path.join(datasets_root, sample['image_path'])
-            mask_path = os.path.join(datasets_root, sample['mask_path'])
-            prompt = self._get_prompt_for_sample(sample, datasets_root)
-
-            processed_samples.append({
-                'image_path': image_path,
-                'mask_path': mask_path,
-                'prompt': prompt,
-                'sample_id': os.path.splitext(os.path.basename(sample['image_path']))[0],
-                'defect_name': sample.get('defect_name', 'unknown'),
-                'dataset': sample.get('dataset', 'unknown')
-            })
-
-        return processed_samples
-
-    def _get_prompt_for_sample(self, sample, datasets_root):
-        """Retrieve prompt text for a sample."""
-        if 'analysis_files_short' in sample:
-            prompt_path = os.path.join(datasets_root, sample['analysis_files_short'])
-            try:
-                if os.path.exists(prompt_path):
-                    with open(prompt_path, 'r', encoding='utf-8') as f:
-                        return f.read().strip()
-            except Exception as e:
-                print(f"Warning: Failed to read short prompt file {prompt_path}: {str(e)}")
-
-        if 'analysis_files' in sample:
-            prompt_path = os.path.join(datasets_root, sample['analysis_files'])
-            try:
-                if os.path.exists(prompt_path):
-                    with open(prompt_path, 'r', encoding='utf-8') as f:
-                        return f.read().strip()
-            except Exception as e:
-                print(f"Warning: Failed to read prompt file {prompt_path}: {str(e)}")
-
-        defect_name = sample.get('defect_name', 'defect')
-        return f"The image shows an object with a {defect_name} defect."
-
-    def _prepare_output_structure(self, output_root):
-        """Prepare output directory structure."""
-        subdirs = {
-            "input_images": os.path.join(output_root, "input_images"),
-            "reference_images": os.path.join(output_root, "reference_images"),
-            "reference_masks": os.path.join(output_root, "reference_masks"),
-            "generated_images": os.path.join(output_root, "generated_images"),
-            "masks": os.path.join(output_root, "masks"),
-            "mask_overlays": os.path.join(output_root, "mask_overlays"),
-            "prompts": os.path.join(output_root, "prompts")
-        }
-
-        thresholds = [0.1, 0.3, 0.5, 0.7, 0.9]
-        for t in thresholds:
-            subdirs[f"masks_threshold_{t}"] = os.path.join(output_root, f"masks_threshold_{t}")
-
-        for dir_path in subdirs.values():
-            os.makedirs(dir_path, exist_ok=True)
-
-        return subdirs
-
-    def _preprocess_for_quality(self, img):
-        """Preprocess image for quality evaluation with consistent dimensions."""
-        img = img.resize((256, 256))
-        img_array = np.array(img)
-        if len(img_array.shape) == 2:
-            img_array = np.stack([img_array] * 3, axis=-1)
-        elif img_array.shape[2] == 4:
-            img_array = img_array[:, :, :3]
-        tensor = torch.from_numpy(img_array.astype(np.float32) / 255.0)
-        tensor = tensor.permute(2, 0, 1).unsqueeze(0)
-        return tensor.to(self.device)
-
-    def generate_anomaly_image(self,
-                              normal_image,
-                              normal_image_path,
-                              reference_data_list,
-                              output_root,
-                              num_inference_steps=50,
-                              ip_scale=0.3,
-                              seed=42,
-                              strength=0.3,
-                              evaluate_quality=True,
-                              num_anomaly_images=1):
-        """Generate anomaly images using single-image generation with reference masks."""
-        subdirs = self._prepare_output_structure(output_root)
-        target_size = (512, 512)
-        normal_image = normal_image.resize(target_size)
-        results = []
-
-        if evaluate_quality and self.quality_model:
-            ref_tensor = self._preprocess_for_quality(normal_image)
-            print(f"Reference tensor shape for {normal_image_path}: {ref_tensor.shape}")
-
-        for ref_idx, ref_data in enumerate(reference_data_list):
-            try:
-                reference_image = Image.open(ref_data['image_path']).convert("RGB").resize(target_size)
-                if not os.path.exists(ref_data['mask_path']):
-                    print(f"Error: Reference mask not found at {ref_data['mask_path']}")
-                    continue
-                reference_mask = Image.open(ref_data['mask_path']).convert("L").resize(target_size)
-                reference_mask_np = np.array(reference_mask)
-                reference_mask = Image.fromarray((reference_mask_np > 128).astype(np.uint8) * 255)
-
-                reference_mask_binary = (reference_mask_np > 128).astype(np.uint8) * 255
-
-                # Calculate white area ratio
-                white_pixels = np.sum(reference_mask_binary > 0)
-                total_pixels = reference_mask_binary.size
-                white_ratio = white_pixels / total_pixels
-
-                # If white area ratio is less than 3%, expand to at least 5%
-                if white_ratio < 0.03:
-                    print(f"White area ratio is {white_ratio:.4f}, expanding to at least 5%")
-
-                    # Calculate the degree of dilation needed
-                    current_area = white_pixels
-                    target_area = int(total_pixels * 0.05)  # Target 5%
-
-                    # Use morphological dilation to expand the mask
-                    kernel_size = 3
-                    kernel = np.ones((kernel_size, kernel_size), np.uint8)
-
-                    # Iterate dilation until target area is reached or max iterations
-                    max_iterations = 20
-                    expanded_mask = reference_mask_binary.copy()
-
-                    for i in range(max_iterations):
-                        current_white = np.sum(expanded_mask > 0)
-                        if current_white >= target_area:
-                            break
-
-                        # Perform dilation
-                        expanded_mask = cv2.dilate(expanded_mask, kernel, iterations=1)
-
-                        # Check if target is reached
-                        new_white = np.sum(expanded_mask > 0)
-                        if new_white == current_white:  # No change, stop iteration
-                            break
-
-                    # Update mask
-                    reference_mask_binary = expanded_mask
-
-                    new_white_ratio = np.sum(expanded_mask > 0) / total_pixels
-                    print(f"After expansion, white area ratio is {new_white_ratio:.4f}")
-
-                mask_image = Image.fromarray(reference_mask_binary)
-                mask_image = reference_mask
-
-                print(f"Processing reference {ref_idx}: {ref_data['image_path']}")
-                print(f"Reference image mode: {reference_image.mode}, size: {reference_image.size}")
-                print(f"Normal image mode: {normal_image.mode}, size: {normal_image.size}")
-                print(f"Normal mask mode: {mask_image.mode}, size: {mask_image.size}")
-                print(f"Reference mask mode: {reference_mask.mode}, size: {reference_mask.size}")
-
-                images = []
-                for img_idx in range(num_anomaly_images):
-                    torch.manual_seed(seed + ref_idx + img_idx)
-                    single_image = self.ip_model.generate(
-                        pil_image=reference_image,
-                        num_samples=1,
-                        num_inference_steps=num_inference_steps,
-                        prompt=ref_data['prompt'],
-                        scale=ip_scale,
-                        image=normal_image,
-                        mask_image=mask_image,
-                        mask_image_0=reference_mask,
-                        strength=strength,
-                    )
-                    if not single_image:
-                        print(f"Warning: No image generated for anomaly {img_idx}, reference {ref_idx}")
-                        continue
-                    images.append(single_image[0])
-
-                print(f"Generated {len(images)} images for reference {ref_idx}, normal image {normal_image_path}")
-                if not images:
-                    raise RuntimeError("No images generated for reference")
-
-                normal_id = os.path.splitext(os.path.basename(normal_image_path))[0]
-                for img_idx, generated_image in enumerate(images):
-                    if not isinstance(generated_image, Image.Image):
-                        print(f"Error: Generated image {img_idx} is not a PIL Image, type: {type(generated_image)}")
-                        continue
-
-                    save_name = f"{normal_id}_ref{ref_data['sample_id']}_anomaly{img_idx}"
-
-                    # Save to separate folders instead of all in input_images
-                    normal_image.save(os.path.join(subdirs["input_images"], f"{save_name}_normal.png"))
-                    reference_image.save(os.path.join(subdirs["reference_images"], f"{save_name}_reference.png"))
-                    mask_image.save(os.path.join(subdirs["reference_masks"], f"{save_name}_mask.png"))
-                    reference_mask.save(os.path.join(subdirs["reference_masks"], f"{save_name}_ref_mask.png"))
-                    generated_image.save(os.path.join(subdirs["generated_images"], f"{save_name}_generated.png"))
-
-                    with open(os.path.join(subdirs["prompts"], f"{save_name}_prompt.txt"), 'w') as f:
-                        f.write(ref_data['prompt'])
-
-                    quality_results = None
-                    if evaluate_quality and self.quality_model:
-                        try:
-                            gen_tensor = self._preprocess_for_quality(generated_image)
-                            print(f"Generated tensor shape for {save_name}: {gen_tensor.shape}")
-
-                            with torch.no_grad():
-                                pred_masks = self.quality_model({
-                                    "query_image": gen_tensor,
-                                    "prompt_image": ref_tensor
-                                })
-                            print(f"Prediction masks shape for {save_name}: {pred_masks.shape}")
-                            pred_mask = pred_masks.squeeze().detach().cpu().numpy()
-
-                            thresholds = [0.1, 0.3, 0.5, 0.7, 0.9]
-                            quality_results = {
-                                f"threshold_{t}": {
-                                    "quality_score": float(1.0 - (pred_mask > t).mean()),
-                                    "binary_mask": (pred_mask > t).astype(np.uint8).tolist()
-                                } for t in thresholds
-                            }
-
-                            for t in thresholds:
-                                threshold_mask = np.array(quality_results[f"threshold_{t}"]["binary_mask"]).astype(np.uint8)
-                                Image.fromarray(threshold_mask * 255).save(
-                                    os.path.join(subdirs[f"masks_threshold_{t}"], f"{save_name}_mask.png"))
-
-                            main_mask = np.array(quality_results["threshold_0.5"]["binary_mask"]).astype(np.uint8)
-                            Image.fromarray(main_mask * 255).save(
-                                os.path.join(subdirs["masks"], f"{save_name}_mask.png"))
-
-                            overlay_img = generated_image.copy()
-                            mask_overlay = Image.fromarray(main_mask * 255).resize(generated_image.size).convert("L")
-                            red_mask = Image.new("RGBA", generated_image.size, (255, 0, 0, 128))
-                            overlay_img.paste(red_mask, mask=mask_overlay)
-                            overlay_img.save(os.path.join(subdirs["mask_overlays"], f"{save_name}_overlay.png"))
-
-                            with open(os.path.join(output_root, f"{save_name}_quality.json"), 'w') as f:
-                                json.dump(quality_results, f, indent=2)
-
-                        except Exception as e:
-                            print(f"Quality evaluation failed for {save_name}: {str(e)}")
-                            quality_results = None
-
-                    results.append({
-                        'normal_image': normal_image_path,
-                        'reference_image': ref_data['image_path'],
-                        'generated_image': os.path.join(subdirs["generated_images"], f"{save_name}_generated.png"),
-                        'prompt': ref_data['prompt'],
-                        'sample_id': ref_data['sample_id'],
-                        'anomaly_index': img_idx,
-                        'mask_path': ref_data['mask_path'],
-                        'ref_mask_path': ref_data['mask_path'],
-                        'quality': quality_results,
-                        'defect_name': ref_data['defect_name'],
-                        'dataset': ref_data['dataset']
-                    })
-
-            except Exception as e:
-                print(f"Error processing reference sample {ref_idx} for {normal_image_path}: {str(e)}")
-                continue
-
+class MetaUASWrapper:
+    """MetaUAS quality assessment model wrapper class"""
+    def __init__(self, ckt_path, img_size=256):
+        set_random_seed(1)
+        encoder = 'efficientnet-b4'
+        decoder = 'unet'
+        encoder_depth = 5
+        decoder_depth = 5
+        num_crossfa_layers = 3
+        alignment_type = 'sa'
+        fusion_policy = 'cat'
+        self.model = MetaUAS(encoder, decoder, encoder_depth, decoder_depth,
+                             num_crossfa_layers, alignment_type, fusion_policy)
+        self.model = safely_load_state_dict(self.model, ckt_path)
+        self.model.cuda()
+        self.model.eval()
+        self.img_size = img_size
+        self.thresholds = [0.1, 0.3, 0.5, 0.7, 0.9]  # Multiple thresholds
+    def evaluate_quality(self, generated_image, reference_image):
+        """Evaluate the quality of the generated image, return results under multiple thresholds"""
+        def preprocess(img):
+            img = img.resize((self.img_size, self.img_size))
+            img = np.array(img).astype(np.float32) / 255.0
+            return torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0)
+        gen_tensor = preprocess(generated_image).cuda()
+        ref_tensor = preprocess(reference_image).cuda()
+        with torch.no_grad():
+            test_data = {
+                "query_image": gen_tensor,
+                "prompt_image": ref_tensor,
+            }
+            predicted_masks = self.model(test_data)
+        pred_mask = predicted_masks.squeeze().detach().cpu().numpy()
+        # Compute results under multiple thresholds
+        results = {}
+        for threshold in self.thresholds:
+            quality_score = 1.0 - (pred_mask > threshold).mean()
+            binary_mask = (pred_mask > threshold).astype(np.uint8)
+            results[f"threshold_{threshold}"] = {
+                "quality_score": quality_score,
+                "binary_mask": binary_mask
+            }
         return results
+
+
+def load_models(ip_adapter, attn_bin, base_model_path, vae_model_path, image_encoder_path, device):
+    """Load Diffusion models"""
+    timer = Timer()
+    noise_scheduler = DDIMScheduler(
+        num_train_timesteps=1000,
+        beta_start=0.00085,
+        beta_end=0.012,
+        beta_schedule="scaled_linear",
+        clip_sample=False,
+        set_alpha_to_one=False,
+        steps_offset=1,
+    )
+    vae = AutoencoderKL.from_pretrained(vae_model_path).to(device=device, dtype=torch.float16)
+    timer.checkpoint("VAE loaded")
+    pipe = StableDiffusionInpaintPipelineLegacy.from_pretrained(
+        base_model_path,
+        torch_dtype=torch.float16,
+        scheduler=noise_scheduler,
+        vae=vae,
+        feature_extractor=None,
+        safety_checker=None
+    ).to(device)
+    timer.checkpoint("Base pipeline loaded")
+    pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+    ip_model = IPAdapter(pipe, image_encoder_path, ip_adapter, attn_bin, device)
+    timer.checkpoint("IP adapter loaded")
+    return ip_model
+
+
+def load_dataset_info(similarity_results_path, target_categories=None):
+    """Load dataset information"""
+    with open(similarity_results_path, "r") as f:
+        similarity_results = json.load(f)
+    object_defect_pairs = {}
+    categories = set()
+    defect_types = set()
+    for item in similarity_results:
+        obj = item["object"]
+        defect = item["defect"]
+        if target_categories is not None and obj not in target_categories:
+            continue
+        categories.add(obj)
+        defect_types.add(defect)
+        object_defect_pairs[(obj, defect)] = item
+    return sorted(categories), sorted(defect_types), object_defect_pairs
+
+
+def load_and_process_mask(mask_path, target_size=(512, 512)):
+    """Load and process mask"""
+    mask = Image.open(mask_path).convert("L").resize(target_size)
+    mask_np = np.array(mask)
+    return Image.fromarray((mask_np > 128).astype(np.uint8) * 255)
+
+
+def load_mask_for_visa(object_category, defect_type, mask_base, style_image_path):
+    """Load mask for VisA dataset"""
+    image_name = os.path.basename(style_image_path)
+    image_index = os.path.splitext(image_name)[0]
+    mask_dir = os.path.join(mask_base, object_category, "Anomaly", str(image_index))
+    if not os.path.exists(mask_dir):
+        raise FileNotFoundError(f"Mask directory not found: {mask_dir}")
+    mask_files = [f for f in os.listdir(mask_dir) if f.endswith((".JPG", ".jpg", ".png"))]
+    if not mask_files:
+        raise FileNotFoundError(f"No masks found in {mask_dir}")
+    mask_file = random.choice(mask_files)
+    mask_path = os.path.join(mask_dir, mask_file)
+    return load_and_process_mask(mask_path)
+
+
+def get_mask_loader(dataset_type):
+    """Return the corresponding mask loading function based on dataset type"""
+    if dataset_type == "visa":
+        return load_mask_for_visa
+    else:
+        raise ValueError(f"Unknown dataset type: {dataset_type}")
+
+
+def get_style_images_paths(args, object_category):
+    """Get style image paths"""
+    if args.dataset_type in ["visa"]:
+        style_ref_path = os.path.join(args.dataset_base, object_category, "Data/Images/Normal")
+        if not os.path.exists(style_ref_path):
+            print(f"Warning: Style reference directory does not exist {style_ref_path}")
+            return None
+        style_images = [os.path.join(style_ref_path, f) for f in os.listdir(style_ref_path)
+                        if f.endswith((".JPG", ".jpg", ".png"))]
+    else:
+        style_ref_path = os.path.join(args.dataset_base, object_category, "train/good")
+        if not os.path.exists(style_ref_path):
+            print(f"Warning: Style reference directory does not exist {style_ref_path}")
+            return None
+        style_images = [os.path.join(style_ref_path, f) for f in os.listdir(style_ref_path)
+                        if f.endswith((".JPG", ".jpg", ".png"))]
+    if not style_images:
+        print(f"Warning: No style images found in {style_ref_path}")
+        return None
+    return style_images
+
+
+def load_reference_data(
+        object_category,
+        defect_type,
+        style_image_path,
+        similarity_results_path,
+        merged_datasets_path,
+        anomaly_image_base,
+        mvtec_base,
+        mask_base,
+        dataset_type,
+        args=None
+):
+    """Load reference data"""
+    with open(similarity_results_path, "r") as f:
+        similarity_results = json.load(f)
+    with open(merged_datasets_path, "r") as f:
+        image_paths = json.load(f)
+    config = next((item for item in similarity_results
+                   if item["object"] == object_category and item["defect"] == defect_type), None)
+    if not config:
+        raise ValueError(f"No config found for {object_category} with {defect_type}")
+    similar_objects = config["similar_objects"]
+    base_path = anomaly_image_base
+    if style_image_path is None:
+        style_images = get_style_images_paths(args, object_category)
+        if not style_images:
+            raise FileNotFoundError(f"No style images found for {object_category}")
+        style_image_path = random.choice(style_images)
+    style_image_name = os.path.basename(style_image_path)
+    style_image = Image.open(style_image_path).convert("RGB").resize((512, 512))
+    defect_data = []
+    for obj in similar_objects:
+        for dataset in image_paths["datasets"]:
+            if dataset["name"] == obj["dataset"]:
+                for img_info in dataset["images"]:
+                    if (img_info["category"] == obj["object"] and
+                            img_info["defect_name"] == config["similar_defect"]):
+                        defect_data.append({
+                            "img_path": os.path.join(base_path, img_info["image_path"]),
+                            "mask_path": os.path.join(base_path, img_info["mask_path"]),
+                            "prompt_path": os.path.join(base_path, img_info["analysis_files_short"]),
+                        })
+    if not defect_data:
+        raise ValueError("No defect images found")
+    selected_data = random.choice(defect_data)
+    defect_image = Image.open(selected_data["img_path"]).convert("RGB").resize((512, 512))
+    raw_mask = Image.open(selected_data["mask_path"]).convert("L").resize((512, 512))
+    mask_loader = get_mask_loader(dataset_type)
+    processed_mask = mask_loader(object_category, defect_type, mask_base, style_image_path)
+    with open(selected_data["prompt_path"], "r") as f:
+        prompt = f.read()
+    return {
+        "style_image": style_image,
+        "style_image_name": style_image_name,
+        "defect_image": defect_image,
+        "raw_mask": raw_mask,
+        "processed_mask": processed_mask,
+        "prompt": prompt,
+        "similar_defect": config["similar_defect"],
+    }
+
+
+def apply_initial_mask_constraint(generated_mask, initial_mask):
+    """
+    Ensure the generated mask remains black in regions where the initial mask is black
+    """
+    # Convert PIL images to numpy arrays
+    gen_mask_np = np.array(generated_mask)
+    init_mask_np = np.array(initial_mask)
+    # If sizes do not match, resize initial mask to match generated mask
+    if gen_mask_np.shape != init_mask_np.shape:
+        init_mask_np = np.array(initial_mask.resize(generated_mask.size))
+    # Binarize initial mask (0 or 255)
+    init_mask_binary = (init_mask_np > 128).astype(np.uint8) * 255
+    # Force black in regions where initial mask is black
+    constrained_mask = gen_mask_np * (init_mask_binary > 0)
+    return Image.fromarray(constrained_mask)
+
+
+def create_mask_overlay(image, mask, alpha=0.5, color=(255, 0, 0)):
+    """
+    Create an image with a semi-transparent mask overlay effect
+    :param image: Original image in PIL Image format
+    :param mask: Mask in PIL Image format (single channel)
+    :param alpha: Mask transparency (0-1)
+    :param color: Mask color (RGB tuple)
+    :return: PIL Image with mask overlay effect
+    """
+    # Convert image and mask to numpy arrays
+    img_np = np.array(image)
+    mask_np = np.array(mask)
+    # Ensure mask is binarized
+    mask_binary = (mask_np > 128).astype(np.uint8)
+    # Create a colored mask
+    color_mask = np.zeros_like(img_np)
+    color_mask[..., 0] = color[0]  # R channel
+    color_mask[..., 1] = color[1]  # G channel
+    color_mask[..., 2] = color[2]  # B channel
+    # Apply mask to original image
+    overlay = img_np.copy()
+    overlay = overlay.astype(np.float32)
+    color_mask = color_mask.astype(np.float32)
+    # Apply color only in mask regions
+    overlay[mask_binary > 0] = overlay[mask_binary > 0] * (1 - alpha) + color_mask[mask_binary > 0] * alpha
+    overlay = np.clip(overlay, 0, 255).astype(np.uint8)
+    return Image.fromarray(overlay)
+
+
+def generate_with_quality_control(
+        ip_model,
+        quality_model,
+        object_category,
+        defect_type,
+        style_image_path,
+        output_base,
+        num_samples_target,
+        min_quality_score=0.95,
+        min_mask_coverage=0.01,
+        max_attempts=100,
+        num_inference_steps=50,
+        scale=0.1,
+        seed=42,
+        strength=0.9,
+        dataset_type="visa",
+        mask_base=None,
+        args=None
+):
+    """Generation process with quality control"""
+    # Create standard directory structure
+    # scale = round(random.uniform(0.1, 0.5), 2)  # Keep two decimal places
+    visa_processed_dir = os.path.join(output_base, "visa_processed")
+    category_dir = os.path.join(visa_processed_dir, object_category)
+    abnormal_dir = os.path.join(category_dir, "abnormal_images")
+    normal_dir = os.path.join(category_dir, "normal_images")
+    masks_dir = os.path.join(category_dir, "masks_1")  # Changed to masks_1
+    initial_masks_dir = os.path.join(category_dir, "input_masks")  # New initial mask directory
+    overlays_dir = os.path.join(category_dir, "mask_overlays")  # New mask overlay directory
+    stats_dir = os.path.join(category_dir, "stats")
+    reference_dir = os.path.join(category_dir, "reference_images")  # New reference image directory
+    # Create subdirectories for each threshold
+    threshold_dirs = {}
+    for threshold in quality_model.thresholds:
+        threshold_dir = os.path.join(category_dir, f"masks_threshold_{threshold}")
+        os.makedirs(threshold_dir, exist_ok=True)
+        threshold_dirs[threshold] = threshold_dir
+    os.makedirs(abnormal_dir, exist_ok=True)
+    os.makedirs(normal_dir, exist_ok=True)
+    os.makedirs(masks_dir, exist_ok=True)
+    os.makedirs(initial_masks_dir, exist_ok=True)
+    os.makedirs(overlays_dir, exist_ok=True)
+    os.makedirs(stats_dir, exist_ok=True)
+    os.makedirs(reference_dir, exist_ok=True)
+    # Load reference data
+    data = load_reference_data(
+        object_category,
+        defect_type,
+        style_image_path,
+        args.similarity_results,
+        args.merged_datasets,
+        args.anomaly_image_base,
+        args.dataset_base,
+        mask_base,
+        dataset_type,
+        args
+    )
+    # Save original image to normal_images
+    original_save_path = os.path.join(normal_dir, data["style_image_name"])
+    if not os.path.exists(original_save_path):
+        data["style_image"].save(original_save_path)
+    successful_samples = 0
+    attempt_count = 0
+    quality_scores = []
+    while successful_samples < num_samples_target and attempt_count < max_attempts:
+        attempt_count += 1
+        # Record generation start time
+        gen_start_time = time.time()
+        # Generate image
+        torch.manual_seed(seed + attempt_count)
+        images = ip_model.generate(
+            pil_image=data["defect_image"],
+            num_samples=1,
+            num_inference_steps=num_inference_steps,
+            # prompt=data["prompt"],
+            scale=scale,
+            image=data["style_image"],
+            mask_image_0=data["raw_mask"],
+            mask_image=data["processed_mask"],
+            strength=strength,
+        )
+        # Calculate generation time
+        gen_time = time.time() - gen_start_time
+        if not images:
+            print(f"Generation failed - Time: {gen_time:.2f}s")
+            continue
+        generated_image = images[0]
+        # Evaluate quality
+        eval_start_time = time.time()
+        quality_results = quality_model.evaluate_quality(
+            generated_image,
+            data["style_image"]
+        )
+        eval_time = time.time() - eval_start_time
+        # Use threshold_0.5 result as main judgment criterion
+        main_result = quality_results["threshold_0.5"]
+        quality_score = main_result["quality_score"]
+        anomaly_mask = main_result["binary_mask"]
+        anomaly_mask_pil = Image.fromarray(anomaly_mask * 255).resize(data["processed_mask"].size)
+        constrained_mask = apply_initial_mask_constraint(
+            anomaly_mask_pil,
+            data["processed_mask"]
+        )
+        constrained_mask_np = np.array(constrained_mask)
+        # Recalculate coverage (after constraint)
+        total_pixels = constrained_mask_np.size
+        constrained_coverage = (constrained_mask_np > 0).sum() / total_pixels
+        # Save qualified samples (meeting both quality score and coverage requirements)
+        if quality_score >= min_quality_score and constrained_coverage >= min_mask_coverage:
+            successful_samples += 1
+            quality_scores.append(quality_score)
+            # Generate filename (using style image name + sequence number)
+            base_name = os.path.splitext(data["style_image_name"])[0]
+            gen_image_name = f"{base_name}_{successful_samples}.png"
+            mask_name = f"{base_name}_{successful_samples}_mask.png"
+            initial_mask_name = f"{base_name}_{successful_samples}_mask.png"
+            overlay_name = f"{base_name}_{successful_samples}_overlay.png"
+            ref_image_name = f"{base_name}_{successful_samples}_reference.png"
+            # Save files
+            save_start_time = time.time()
+            gen_save_path = os.path.join(abnormal_dir, gen_image_name)
+            generated_image.save(gen_save_path)
+            mask_save_path = os.path.join(masks_dir, mask_name)
+            constrained_mask.save(mask_save_path)
+            # Save initial mask
+            initial_mask_save_path = os.path.join(initial_masks_dir, initial_mask_name)
+            data["processed_mask"].save(initial_mask_save_path)
+            overlay_image = create_mask_overlay(generated_image, constrained_mask, alpha=0.5, color=(255, 0, 0))
+            overlay_save_path = os.path.join(overlays_dir, overlay_name)
+            overlay_image.save(overlay_save_path)
+            # Save reference image, corresponding to the generated defect image
+            ref_save_path = os.path.join(reference_dir, ref_image_name)
+            data["defect_image"].save(ref_save_path)
+            # Save masks under all thresholds
+            for threshold, result in quality_results.items():
+                threshold_value = float(threshold.split("_")[1])
+                threshold_mask = Image.fromarray(result["binary_mask"] * 255).resize(data["processed_mask"].size)
+                constrained_threshold_mask = apply_initial_mask_constraint(threshold_mask, data["processed_mask"])
+                threshold_mask_path = os.path.join(threshold_dirs[threshold_value], mask_name)
+                constrained_threshold_mask.save(threshold_mask_path)
+            save_time = time.time() - save_start_time
+            total_time = gen_time + eval_time + save_time
+            print(f"Generated qualified sample {successful_samples}/{num_samples_target}, "
+                  f"quality score: {quality_score:.2f}, "
+                  f"mask coverage: {constrained_coverage * 100:.2f}%, "
+                  f"total time: {total_time:.2f}s (generation: {gen_time:.2f}s, evaluation: {eval_time:.2f}s, save: {save_time:.2f}s)")
+        else:
+            total_time = gen_time + eval_time
+            print(f"Sample unqualified - quality score: {quality_score:.2f} (required: >= {min_quality_score}), "
+                  f"mask coverage: {constrained_coverage * 100:.2f}% (required: >= {min_mask_coverage * 100:.2f}%), "
+                  f"time: {total_time:.2f}s (generation: {gen_time:.2f}s, evaluation: {eval_time:.2f}s)")
+    # Save statistics
+    if quality_scores:
+        stats_file = os.path.join(stats_dir, f"stats_{defect_type}.txt")
+        with open(stats_file, "w") as f:
+            f.write(f"Generation Statistics for {object_category}/{defect_type}\n")
+            f.write(f"Total attempts: {attempt_count}\n")
+            f.write(f"Successful samples: {successful_samples}\n")
+            f.write(f"Average quality: {np.mean(quality_scores):.4f}\n")
+            f.write(f"Min quality: {min(quality_scores):.4f}\n")
+            f.write(f"Max quality: {max(quality_scores):.4f}\n")
+            f.write(f"Min mask coverage: {min_mask_coverage}\n")
+            f.write(f"Thresholds used: {quality_model.thresholds}\n")
+    return quality_scores
 
 
 def main():
     parser = argparse.ArgumentParser(description="Anomaly Image Generation with Quality Control")
-
-    parser.add_argument("--ip_ckpt", type=str, required=True, help="IP Adapter model checkpoint path")
-    parser.add_argument("--ip_ckpt_1", type=str, required=True, help="IP Adapter attention module checkpoint path")
-    parser.add_argument("--base_model", type=str, required=True, help="Base model path (Stable Diffusion)")
-    parser.add_argument("--vae_model", type=str, required=True, help="VAE model path")
-    parser.add_argument("--image_encoder", type=str, required=True, help="Image encoder path")
-    parser.add_argument("--quality_model", type=str, default=None, help="Quality evaluation model path")
-    parser.add_argument("--dataset_info_path", type=str, required=True, help="Merged dataset JSON path")
-    parser.add_argument("--datasets_root", type=str, required=True, help="Root directory for datasets")
-    parser.add_argument("--normal_images_dir", type=str, required=True, help="Directory containing normal images")
-    parser.add_argument("--output_base", type=str, required=True, help="Base path for output results")
-    parser.add_argument("--num_samples", type=int, default=None, help="Number of normal images to process")
-    parser.add_argument("--steps", type=int, default=50, help="Number of inference steps")
-    parser.add_argument("--ip_scale", type=float, default=0.3, help="IP Adapter scale factor")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument("--strength", type=float, default=0.5, help="Denoising strength")
-    parser.add_argument("--evaluate", action="store_true", default=True, help="Evaluate generated image quality")
-    parser.add_argument("--num_anomaly_images", type=int, default=1, help="Number of anomaly images to generate per reference sample")
-    parser.add_argument("--num_references", type=int, default=8, help="Number of reference samples per normal image")
-    parser.add_argument("--cuda_device", type=str, default="0", help="CUDA device ID")
-    parser.add_argument("--hf_endpoint", type=str, default="https://hf-mirror.com", help="Hugging Face mirror endpoint")
-
+    # Model path parameters
+    parser.add_argument("--ip_adapter", type=str, required=True,
+                        help="IP Adapter model checkpoint path")
+    parser.add_argument("--attn_bin", type=str, required=True,
+                        help="IP Adapter attention bin path")
+    parser.add_argument("--base_model_path", type=str, required=True,
+                        help="Base model path (Stable Diffusion)")
+    parser.add_argument("--vae_model_path", type=str, required=True,
+                        help="VAE model path")
+    parser.add_argument("--image_encoder_path", type=str, required=True,
+                        help="Image encoder path")
+    parser.add_argument("--quality_model_path", type=str, required=True,
+                        help="Quality assessment model path")
+    # Dataset path parameters
+    parser.add_argument("--dataset_type", type=str, choices=["mvtec", "visa"], required=True,
+                        help="Dataset type (mvtec/visa)")
+    parser.add_argument("--similarity_results", type=str, required=True,
+                        help="Similarity results JSON path")
+    parser.add_argument("--dataset_base", type=str, required=True,
+                        help="Dataset base path")
+    parser.add_argument("--mask_base", type=str, required=True,
+                        help="Mask file base path")
+    parser.add_argument("--anomaly_image_base", type=str, required=True,
+                        help="Anomaly image base path")
+    parser.add_argument("--merged_datasets", type=str, required=True,
+                        help="Merged datasets JSON path")
+    # Output parameters
+    parser.add_argument("--output_base", type=str, required=True,
+                        help="Results output base path")
+    # Generation parameters
+    parser.add_argument("--num_samples", type=int, default=1,
+                        help="Target number of qualified images to generate per sample")
+    parser.add_argument("--max_attempts", type=int, default=100,
+                        help="Maximum attempts per sample")
+    parser.add_argument("--min_quality", type=float, default=0.7,
+                        help="Minimum quality score threshold")
+    parser.add_argument("--min_mask_coverage", type=float, default=0.001,
+                        help="Minimum mask coverage threshold (0-1)")
+    parser.add_argument("--num_inference_steps", type=int, default=20,
+                        help="Number of inference steps")
+    parser.add_argument("--ip_scale", type=float, default=1,
+                        help="IP Adapter scale factor")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed")
+    parser.add_argument("--strength", type=float, default=0.6,
+                        help="Denoising strength")
     args = parser.parse_args()
 
+    # Set categories based on dataset_type if not specified
+    mvtec_categories = ["bottle", "cable", "capsule", "carpet", "grid", "hazelnut", "leather", "metal_nut", "pill", "screw", "tile", "toothbrush", "transistor", "wood", "zipper"]
+    visa_categories = ["candle", "capsules", "cashew", "chewinggum", "macaroni1", "macaroni2", "pcb1", "pcb2", "pcb3", "pcb4", "fryum", "pipe_fryum"]
+    if args.dataset_type == "mvtec":
+        args.categories = mvtec_categories
+    else:
+        args.categories = visa_categories
+    print(f"Processing categories: {args.categories} for dataset_type: {args.dataset_type}")
+
     # Environment setup
-    os.environ["HF_ENDPOINT"] = args.hf_endpoint
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_device
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    generator = BatchAnomalyGenerator()
-
-    try:
-        generator.load_models(
-            ip_ckpt=args.ip_ckpt,
-            ip_ckpt_1=args.ip_ckpt_1,
-            base_model_path=args.base_model,
-            vae_model_path=args.vae_model,
-            image_encoder_path=args.image_encoder,
-            quality_model_path=args.quality_model,
-            dataset_info_path=args.dataset_info_path
-        )
-    except Exception as e:
-        print(f"Initialization error: {str(e)}")
+    # Load models
+    print("Loading Diffusion models...")
+    ip_model = load_models(
+        args.ip_adapter,
+        args.attn_bin,
+        args.base_model_path,
+        args.vae_model_path,
+        args.image_encoder_path,
+        device
+    )
+    print("Loading quality assessment model...")
+    quality_model = MetaUASWrapper(args.quality_model_path)
+    # Load dataset information
+    print("\nLoading dataset information...")
+    all_categories, all_defect_types, all_object_defect_pairs = load_dataset_info(
+        args.similarity_results, args.categories
+    )
+    # Filter categories based on parameters
+    object_defect_pairs = {k: v for k, v in all_object_defect_pairs.items()
+                           if k[0] in args.categories}
+    # Group defects by object category
+    from collections import defaultdict
+    category_to_defects = defaultdict(list)
+    for (category, defect), config in object_defect_pairs.items():
+        category_to_defects[category].append((defect, config))
+    categories = sorted(category_to_defects.keys())
+    if not categories:
+        print(f"Warning: No data found for matching categories {args.categories}")
         return
-
-    normal_images = []
-    for root, _, files in os.walk(args.normal_images_dir):
-        for file in files:
-            if file.lower().endswith(('.png', '.jpg', '.jpeg')):
-                normal_images.append(os.path.join(root, file))
-
-    if args.num_samples:
-        normal_images = normal_images[:args.num_samples]
-
-    all_results = []
-    for img_path in normal_images:
-        try:
-            print(f"\nProcessing image {img_path}")
-            img = Image.open(img_path).convert("RGB")
-            references = generator._get_random_references(args.num_references, args.datasets_root)
-
-            results = generator.generate_anomaly_image(
-                normal_image=img,
-                normal_image_path=img_path,
-                reference_data_list=references,
-                output_root=args.output_base,
-                num_inference_steps=args.steps,
-                ip_scale=args.ip_scale,
+    print(f"\nAvailable categories: {all_categories}")
+    print(f"Processing {len(categories)} categories: {categories}")
+    total_timer = Timer()
+    all_quality_scores = []
+    # Process each object category
+    for object_category in categories:
+        # Get all possible defect types for this category
+        available_defects = [d for d, _ in category_to_defects[object_category]]
+        # Get style image paths
+        style_images = get_style_images_paths(args, object_category)
+        if not style_images:
+            print(f"Warning: No style images found for {object_category}")
+            continue
+        # Process each style image
+        for style_image_path in style_images:
+            # Randomly select a defect for the current style image
+            defect_type, config = random.choice(category_to_defects[object_category])
+            print(
+                f"\n{'=' * 30}\nProcessing: {object_category} - Style image: {os.path.basename(style_image_path)} - Randomly selected defect: {defect_type}\n{'=' * 30}")
+            quality_scores = generate_with_quality_control(
+                ip_model=ip_model,
+                quality_model=quality_model,
+                object_category=object_category,
+                defect_type=defect_type,
+                style_image_path=style_image_path,
+                output_base=args.output_base,
+                num_samples_target=args.num_samples,
+                min_quality_score=args.min_quality,
+                min_mask_coverage=args.min_mask_coverage,
+                max_attempts=args.max_attempts,
+                num_inference_steps=args.num_inference_steps,
+                scale=args.ip_scale,
                 seed=args.seed,
                 strength=args.strength,
-                evaluate_quality=args.evaluate,
-                num_anomaly_images=args.num_anomaly_images
+                dataset_type=args.dataset_type,
+                mask_base=args.mask_base,
+                args=args
             )
-            all_results.extend(results)
-            for result in results:
-                print(f"Generated: {result['generated_image']}, Defect: {result['defect_name']}, Dataset: {result['dataset']}")
-
-        except Exception as e:
-            print(f"Error processing image {img_path}: {str(e)}")
-            continue
-
-    summary_path = os.path.join(args.output_base, "summary.json")
-    try:
-        with open(summary_path, 'w') as f:
-            json.dump(all_results, f, indent=2)
-        print(f"Processing complete, results saved to {summary_path}")
-    except Exception as e:
-        print(f"Error saving summary JSON: {str(e)}")
+            all_quality_scores.extend(quality_scores)
+    # Print final statistics
+    print("\n" + "=" * 50)
+    print("Final generation results statistics:")
+    print(f"Total processed categories: {len(categories)}")
+    if all_quality_scores:
+        print(f"Total qualified samples generated: {len(all_quality_scores)}")
+        print(f"Average quality score: {np.mean(all_quality_scores):.2f} ± {np.std(all_quality_scores):.2f}")
+        print(f"Highest quality score: {max(all_quality_scores):.2f}")
+        print(f"Lowest quality score: {min(all_quality_scores):.2f}")
+    print(f"Total runtime: {total_timer.total_elapsed:.2f} seconds")
 
 
 if __name__ == "__main__":
