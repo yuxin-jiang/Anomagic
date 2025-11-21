@@ -170,10 +170,10 @@ Big thanks to these amazing open-source works!
 If you find our work useful in your research please consider citing our paper:
 
 ```
-@article{anomagic2025,
-  title={Anomagic: Synthetic Anomaly Generation with IP-Adapter and Quality Control},
-  author={Your Name},
-  journal={arXiv preprint},
-  year={2025}
+@article{anomagic2026,
+  title={Anomagic: Crossmodal Prompt-driven Zero-shot Anomaly Generation},
+  author={Yuxin Jiang, Wei Luo, Hui Zhang, Qiyu Chen, Haiming Yao, Weiming Shen, Yunkang Cao},
+  journal={arXiv preprint arXiv:2511.10020},
+  year={2026}
 }
 ```
