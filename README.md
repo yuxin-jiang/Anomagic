@@ -103,7 +103,7 @@ This generates a JSON file (`<dataset_name>_similarity_results.json`) in the dir
 
 ### 5. Generate Masks for Defects
 Create corresponding masks for defects:
-- Apply `mvtec.json` or `mvtec_range_visa.json`.
+- Apply `mvtec.json` or `visa.json`.
 - Run `creatMask.py`:
 ```bash
 python mask/creatMask.py \
