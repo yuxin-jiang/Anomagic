@@ -149,10 +149,6 @@ Diverse everyday items with realistic anomalies, sourced from web images.
 
 ![Web Example](static/images/zero_web.png)  
 
-## 🛠️ Todo List
-- [ ] Colab demo.
-- [ ] HuggingFace demo.
-
 ## 💌 Acknowledgement
 
 Our generation pipeline is based on the [🤗Diffusers](https://github.com/huggingface/diffusers) library, incorporating implementations from [IP-Adapter](https://github.com/tencent-ailab/IP-Adapter).
@@ -161,7 +157,7 @@ Big thanks to these amazing open-source works!
 
 
 ## 📝 Citation
-If you find our work useful in your research please consider citing our paper:
+If you find our work useful in your research, please consider citing our paper:
 
 ```
 @article{jiang2025anomagic,
