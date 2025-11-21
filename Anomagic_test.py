@@ -364,7 +364,7 @@ class BatchAnomalyGenerator:
 def main():
     parser = argparse.ArgumentParser(description="Anomaly Image Generation with Quality Control")
 
-    parser.add_argument("--ip_ckpt", type=str, default="checkpoints/ip_adapter_0.bin",
+    parser.add_argument("--ip_ckpt", type=str, default="checkpoints/anomagic_0.bin",
                         help="IP Adapter模型 checkpoint 路径")
     parser.add_argument("--ip_ckpt_1", type=str, default="checkpoints/att.bin",
                         help="IP Adapter模型 checkpoint 路径")
@@ -376,11 +376,11 @@ def main():
                         help="图像编码器路径")
     parser.add_argument("--quality_model", type=str, default="weights/metauas-256.ckpt",
                         help="质量评估模型路径")
-    parser.add_argument("--dataset_info_path", type=str, default="Datasets/merged_ad_datasets_cover1.json",
+    parser.add_argument("--dataset_info_path", type=str, default="Datasets/merged_ad_datasets.json",
                         help="合并数据集 JSON 路径")
-    parser.add_argument("--normal_images_dir", type=str, default="Datasets/CYK/over1/good",
+    parser.add_argument("--normal_images_dir", type=str, default="Datasets",
                         help="Directory containing normal images")
-    parser.add_argument("--output_base", type=str, default="output_cover1_0.1_0.5",
+    parser.add_argument("--output_base", type=str, default="output",
                         help="结果输出基础路径")
     parser.add_argument("--num_samples", type=int, default=1,
                         help="Number of normal images to process")
