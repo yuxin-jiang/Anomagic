@@ -72,23 +72,19 @@ def get_possible_mask_names(image_filename):
 def create_dataset_info_json(dataset_root):
     """Create JSON files with dataset information for all supported datasets."""
     datasets = {
-        # 'AITEX': process_aitex_metadata,
-        # 'BTech': process_btech_metadata,
-        # 'eyecandies_preprocessed': process_eyecandies_metadata,
-        # 'MPDD': process_mpdd_mvtec_metadata,
-        # 'mvtec': process_mpdd_mvtec_metadata,
-        # 'MTD': process_mtd_metadata,
-        # 'mvtec3d': process_mvte3d_metadata,
-        # 'VisA_pytorch/1cls': process_mpdd_mvtec_metadata,
-        # 'VisA_20220922': process_visa_metadata,
-        # 'VisA_reference': process_visa_metadata,
-        # 'realAD': process_realad_metadata,
-        # 'KolektorSDD2': process_kolektor_metadata,
-        # 'MulSen_AD': process_mulsen_ad_metadata,
-        # 'mvtec_ad_2': process_mvtec_ad_2_metadata,
-        # 'DAGM_anomaly_detection': process_dagm_anomaly_detection_metadata,
-        # 'MANTA_TINY_256': process_manta_metadata,
-        'CYK': process_over1_metadata,
+        'AITEX': process_aitex_metadata,
+        'BTech': process_btech_metadata,
+        'eyecandies_preprocessed': process_eyecandies_metadata,
+        'MPDD': process_mpdd_mvtec_metadata,
+        'mvtec': process_mpdd_mvtec_metadata,
+        'MTD': process_mtd_metadata,
+        'mvtec3d': process_mvte3d_metadata,
+        'VisA_20220922': process_visa_metadata,
+        'KolektorSDD2': process_kolektor_metadata,
+        'MulSen_AD': process_mulsen_ad_metadata,
+        'mvtec_ad_2': process_mvtec_ad_2_metadata,
+        'DAGM_anomaly_detection': process_dagm_anomaly_detection_metadata,
+        'MANTA_TINY_256': process_manta_metadata,
     }
 
     for dataset_name, processor in datasets.items():
@@ -593,11 +589,10 @@ def process_mvte3d_metadata(dataset_path):
 
     return metadata
 
-
 def process_visa_metadata(dataset_path):
-    """Create metadata for VisA dataset."""
+    """Create metadata for VisA_pytorch dataset."""
     metadata = {
-        "name": "VisA_reference",
+        "name": "VisA_20220922",
         "categories": [],
         "defect_types": [],
         "images": [],
@@ -608,182 +603,41 @@ def process_visa_metadata(dataset_path):
         if os.path.isdir(category_path):
             if category not in ["annotated", "prompt_short", "prompt"]:
                 metadata["categories"].append(category)
-            test_dir = os.path.join(category_path,"Anomaly")
-            mask_dir = os.path.join(category_path,"Anomaly_mask")
+            test_dir = os.path.join(category_path,"Data", 'Images')
+            mask_dir = os.path.join(category_path,"Data", 'Masks', "Anomaly")
             if os.path.exists(test_dir):
-                defect_path = os.path.join(test_dir)
-                Mask_path = os.path.join(mask_dir)
-                if os.path.isdir(defect_path):
-                    metadata["defect_types"].append({
-                        "code": "Anomaly",
-                        "name": "Anomaly"
-                    })
-                    for filename in os.listdir(defect_path):
-                        if filename.lower().endswith(IMAGE_EXTENSIONS_CASE_INSENSITIVE):
-                            base_name, ext = os.path.splitext(filename)
-                            mask_filename = base_name + '_mask.png'
-                            mask_path = os.path.join(Mask_path, mask_filename)
-                            image_rel_path = os.path.join(category, "Anomaly", filename)
-                            if os.path.exists(mask_path):
-                                metadata["images"].append({
-                                    "image_path": os.path.join(category, "Anomaly", filename),
-                                    "mask_path": os.path.join(category, "Anomaly_mask", mask_filename),
-                                    "defect_code": "Anomaly",
-                                    "defect_name": "Anomaly",
-                                    "category": category,
-                                    "split": "test"
-                                })
-                                object_name = category
-                                defect_name = "Anomaly"
-                                if object_name not in metadata["objects"]:
-                                    metadata["objects"][object_name] = set()
-                                metadata["objects"][object_name].add(defect_name)
-
-    for object_name in metadata["objects"]:
-        metadata["objects"][object_name] = list(metadata["objects"][object_name])
-    return metadata
-
-
-def process_realad_metadata(dataset_path, output_dir="processed_dataset"):
-    """Process RealAD dataset to generate annotated images."""
-    metadata = {
-        "name": "realAD",
-        "categories": [],
-        "defect_types": [],
-        "images": [],
-        "objects": {},
-    }
-
-    # Check if dataset path exists
-    if not os.path.exists(dataset_path):
-        raise FileNotFoundError(f"Dataset path does not exist: {dataset_path}")
-
-    # Get all categories
-    categories = [d for d in os.listdir(dataset_path)
-                  if os.path.isdir(os.path.join(dataset_path, d))
-                  and d not in ["annotated", "prompt_short", "prompt"]]
-
-    metadata["categories"] = categories
-
-    # Process each category
-    for category in tqdm(categories, desc="Processing categories"):
-        print(category)
-        category_path = os.path.join(dataset_path, category)
-
-        # Process NG and OK quality types
-        for quality_type in ["NG"]:
-            quality_path = os.path.join(category_path, quality_type)
-
-            # Skip if directory does not exist
-            if not os.path.exists(quality_path):
-                continue
-
-            # Create output directory
-            annotated_dir = os.path.join(quality_path, 'annotated')
-            if os.path.exists(annotated_dir):
-                shutil.rmtree(annotated_dir)
-            os.makedirs(annotated_dir, exist_ok=True)
-
-            # Get all defect type directories
-            defect_types = [d for d in os.listdir(quality_path)
-                            if os.path.isdir(os.path.join(quality_path, d))]
-
-            # Process each defect type
-            for defect_type in defect_types:
-                print(defect_type)
-                defect_path = os.path.join(quality_path, defect_type)
-
-                # Get defect name (use provided mapping)
-                if defect_type != "annotated":
-                    defect_name = realad_defect_codes.get(defect_type, "Unknown")
-
-                    # Record defect type metadata
-                    if {"code": defect_type, "name": defect_name} not in metadata["defect_types"]:
+                for defect_type in os.listdir(test_dir):
+                    defect_path = os.path.join(test_dir, defect_type)
+                    Mask_path = os.path.join(mask_dir)
+                    if os.path.isdir(defect_path) and defect_type != 'Normal':
                         metadata["defect_types"].append({
                             "code": defect_type,
-                            "name": defect_name
+                            "name": defect_type
                         })
+                        print(defect_path)
+                        for filename in os.listdir(defect_path):
+                            if filename.lower().endswith(IMAGE_EXTENSIONS_CASE_INSENSITIVE):
+                                base_name, ext = os.path.splitext(filename)
+                                mask_filename = base_name + '.png'
+                                mask_path = os.path.join(Mask_path, mask_filename)
+                                if os.path.exists(mask_path):
+                                    metadata["images"].append({
+                                        "image_path": os.path.join(category, "Data", 'Images', defect_type, filename),
+                                        "mask_path": os.path.join(category, "Data", 'Masks', "Anomaly", mask_filename),
+                                        "defect_code": defect_type,
+                                        "defect_name": defect_type,
+                                        "category": category,
+                                        "split": "test"
+                                    })
+                                    object_name = category
+                                    defect_name = defect_type
+                                    if object_name not in metadata["objects"]:
+                                        metadata["objects"][object_name] = set()
+                                    metadata["objects"][object_name].add(defect_name)
 
-                # Get all subfolders
-                folders = [f for f in os.listdir(defect_path)
-                           if os.path.isdir(os.path.join(defect_path, f))]
-
-                # Process each subfolder
-                for folder in folders:
-                    folder_path = os.path.join(defect_path, folder)
-
-                    # Get all image files
-                    image_files = [f for f in os.listdir(folder_path)
-                                   if f.lower().endswith(IMAGE_EXTENSIONS_CASE_INSENSITIVE)]
-
-                    # Process each image
-                    for filename in image_files:
-                        image_path = os.path.join(folder_path, filename)
-
-                        try:
-                            # Read image
-                            image = cv2.imread(image_path)
-                            if image is None:
-                                print(f"Warning: Could not read image {image_path}")
-                                continue
-
-                            # Process NG images (with defects)
-                            if quality_type == 'NG':
-                                # Try all possible mask filename variations
-                                mask_found = False
-                                for mask_filename in get_possible_mask_names(filename):
-                                    mask_path = os.path.join(folder_path, mask_filename)
-                                    if os.path.exists(mask_path):
-                                        mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
-                                        if mask is None:
-                                            print(f"Warning: Could not read mask {mask_path}")
-                                            result_image = image
-                                        else:
-                                            # Draw defect bounding boxes
-                                            result_image = draw_defect_boxes(image, mask)
-
-                                        # Record image metadata
-                                        metadata["images"].append({
-                                            "image_path": os.path.relpath(image_path, dataset_path),
-                                            "mask_path": os.path.relpath(mask_path, dataset_path),
-                                            "defect_code": defect_type,
-                                            "defect_name": defect_name,
-                                            "category": category,
-                                            "quality_type": quality_type,
-                                            "folder": folder
-                                        })
-                                        mask_found = True
-                                        break
-
-                                if not mask_found:
-                                    # No mask found, use original image
-                                    result_image = image
-                                    print(f"Warning: No mask file found for {filename} in {folder_path}")
-                            else:
-                                # Process OK images (no defects)
-                                result_image = image
-
-                            # Save processed image
-                            output_path = os.path.join(annotated_dir, filename)
-                            cv2.imwrite(output_path, result_image)
-
-                        except Exception as e:
-                            print(f"Error processing image {image_path}: {str(e)}")
-
-    # Organize objects metadata
-    for img in metadata["images"]:
-        object_name = img["category"]
-        defect_name = img["defect_name"]
-        if object_name not in metadata["objects"]:
-            metadata["objects"][object_name] = set()
-        metadata["objects"][object_name].add(defect_name)
-
-    # Convert sets to lists for JSON serialization
     for object_name in metadata["objects"]:
         metadata["objects"][object_name] = list(metadata["objects"][object_name])
-
     return metadata
-
 
 def process_kolektor_metadata(dataset_path):
     """Create metadata for KolektorSDD2 dataset."""
