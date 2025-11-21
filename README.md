@@ -51,7 +51,7 @@ conda env create -f env.yml
 ```
 Activate the environment:
 ```bash
-conda activate Anomagic  # Or the name specified in env.yml
+conda activate Anomagic
 ```
 ## Download Models
 
