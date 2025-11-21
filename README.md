@@ -107,7 +107,7 @@ Create corresponding masks for defects:
 - Run `creatMask.py`:
 ```bash
 python mask/creatMask.py \
-    --config_json /path/to/mvtec.json \
+    --config_json /path/to/visa.json \
     --output_dir /path/to/masks
 ```
 Masks are saved in the specified directory for use in generation.
