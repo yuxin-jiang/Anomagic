@@ -67,9 +67,9 @@ Follow these steps to prepare data, train models, and generate synthetic anomaly
 ### 1. Dataset JSON Generation
 Generate JSON files for labeling datasets in the `label/` folder:
 - `label-single/`: For individual datasets.
-- `label-all/`: For all datasets combined.
-
 Run the appropriate script to create structured JSON files with image paths, masks, and metadata.
+
+**Note:** The `label-all/` folder (for all datasets combined) should be generated after completing step 2, once the text prompts are available. Run the appropriate script at that point to create structured JSON files incorporating the prompts, along with image paths, masks, and metadata.
 
 ### 2. Generate Text Prompts Using Doubao
 Use Doubao (a text generation tool) to create descriptive prompts for given defect data. Outputs are saved in the `doubao/` folder:
