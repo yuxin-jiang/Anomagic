@@ -59,7 +59,7 @@ You can download the required pretrained models from [here](https://huggingface.
 
 - **IP-Adapter weights** (`ip-adapter_sd15.bin`): Place in the `models/` folder.
 - **Image Encoder weights** (`model.safetensors and pytorch_model.bin`): Place in the `models/image_encoder/` folder.
-- **Checkpoints**: (`longclip-B.pt and longclip-L.pt`): Place in the `models/` folder.
+- **Checkpoints**: (`longclip-B.pt and longclip-L.pt`): Place in the `checkpoints/` folder.
 
 ## 🚀 Workflow
 Follow these steps to prepare data, train models, and generate synthetic anomaly images. The pipeline is designed for VisA and MVTec datasets.
