@@ -106,7 +106,7 @@ Create corresponding masks for defects:
 - Apply `mvtec.json` or `mvtec_range_visa.json`.
 - Run `creatMask.py`:
 ```bash
-python creatMask.py \
+python mask/creatMask.py \
     --config_json /path/to/mvtec.json \
     --output_dir /path/to/masks
 ```
