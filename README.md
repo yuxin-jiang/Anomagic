@@ -89,7 +89,7 @@ python Anomagic_train.py \
 - `--data_json_file`: Path to the JSON file from Step 1, specifying training images.
 - `--output_dir`: Directory to save trained weights.
 
-After training, process the weights using the two `.py` files in the `weight/` folder (e.g., for checkpoint conversion or fine-tuning).
+After training, process the weights using the `Anomagic_weight.py` files in the `weight/` folder.
 
 ### 4. Similarity Judgment for References
 Find similar images as references using `similarity_judgment_visa.py` in the `doubao/` folder:
