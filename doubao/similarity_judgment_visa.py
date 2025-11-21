@@ -8,7 +8,6 @@ import random
 from volcenginesdkarkruntime import Ark
 import argparse
 
-
 # Configuration
 DOUBAO_CONFIG = {
     "API_KEY": "8b4dc34a-50db-443f-82ef-bbe127427b9a",
@@ -228,17 +227,18 @@ def process_dataset(dataset_info_file, target_json, dataset_name):
     # For VisA_20220922, manually define defects for each category
     if dataset_name == "VisA_20220922":
         category_defects = {
-            "candle": ["crack", "deformed candle surface", "deformed wick", "misplaced wick", "color", "bulge", "contamination", "depression"],
-            "capsules": ["contamination","color", "deformed", "squeeze", "scratch"],
-            "cashew": ["color", "crack", "contaminated","hole", "bulge", "scratch", "deformed"],
-            "chewinggum": ["crack", "deformed","scratch", "bulge"],
+            "candle": ["crack", "deformed candle surface", "deformed wick", "misplaced wick", "color", "bulge",
+                       "contamination", "depression"],
+            "capsules": ["contamination", "color", "deformed", "squeeze", "scratch"],
+            "cashew": ["color", "crack", "contaminated", "hole", "bulge", "scratch", "deformed"],
+            "chewinggum": ["crack", "deformed", "scratch", "bulge"],
             "fryum": ["color", "crack", "contamination", "deformed", "scratch"],
             "macaroni1": ["crack", "color", "hole", "contamination", "scratch"],
             "macaroni2": ["crack", "color", "hole", "contamination", "scratch"],
             "pcb1": ["bent lead", "contamination", "missing_component", "misplaced", "scratch"],
             "pcb2": ["bent lead", "contamination", "missing_component", "scratch"],
             "pcb3": ["bent lead", "bent diode", "contamination", "missing_component", "scratch"],
-            "pcb4": ["crack", "deformed","contamination", "broken", "missing_component", "scratch", "misplaced"],
+            "pcb4": ["crack", "deformed", "contamination", "broken", "missing_component", "scratch", "misplaced"],
             "pipe_fryum": ["contamination", "crack", "color", "hole", "scratch", "deformed"]
         }
     else:
@@ -247,10 +247,10 @@ def process_dataset(dataset_info_file, target_json, dataset_name):
             "capsules": ["crack", "color", "hole", "contamination", "squeeze", "scratch"],
             "cable": ["color", "crack", "contaminated", "hole", "bulge", "scratch", "deformed"],
             "carpet": ["color", "contamination", "scratch", "hole", "crack"],
-            "grid": ["color", "crack", "contamination", "scratch","bent"],
+            "grid": ["color", "crack", "contamination", "scratch", "bent"],
             "hazelnut": ["crack", "color", "hole", "contamination", "scratch"],
             "leather": ["crack", "color", "hole", "contamination", "scratch"],
-            "metal_nut": ["color", "crack", "contamination", "scratch","bent"],
+            "metal_nut": ["color", "crack", "contamination", "scratch", "bent"],
             "pill": ["crack", "deformed", "scratch", "bulge", "hole", "scratch"],
             "screw": ["bent", "crack", "deformed", "scratch", "bulge", "hole", "scratch"],
             "tile": ["color", "contamination", "scratch", "hole", "crack"],
@@ -326,7 +326,8 @@ def process_dataset(dataset_info_file, target_json, dataset_name):
             if not similar_objects:
                 defect_objects = defect_object_map.get(similar_defect, [])
                 if defect_objects:
-                    similar_objects = [random.choice(defect_objects)] if len(defect_objects) == 1 else defect_objects[:3]
+                    similar_objects = [random.choice(defect_objects)] if len(defect_objects) == 1 else defect_objects[
+                                                                                                       :3]
             elif len(similar_objects) < 3:
                 defect_objects = defect_object_map.get(similar_defect, [])
                 available_objects = [obj for obj in defect_objects if obj not in similar_objects and obj != 'None']
@@ -369,25 +370,20 @@ def process_dataset(dataset_info_file, target_json, dataset_name):
 
 def main():
     parser = argparse.ArgumentParser(description="Process datasets for defect and object similarity")
-    parser.add_argument("--config", type=str, required=True, help="Path to JSON config file containing merged_json and datasets list")
+    parser.add_argument("--merged_json", type=str, required=True, help="Path to the merged JSON file")
+    parser.add_argument("--dataset_file", type=str, required=True, help="Path to the dataset info JSON file")
+    parser.add_argument("--dataset_name", type=str, required=True, help="Name of the dataset")
+
     args = parser.parse_args()
 
-    # Load config from JSON file
-    with open(args.config, 'r', encoding='utf-8') as f:
-        config = json.load(f)
-
-    merged_json_path = config.get("merged_json")
-    datasets_config = config.get("datasets", [])
-
-    target_json = load_json(merged_json_path)
+    json_file = args.merged_json
+    target_json = load_json(json_file)
     if not target_json:
         return
 
-    for dataset_entry in datasets_config:
-        dataset_file = dataset_entry.get("file")
-        dataset_name = dataset_entry.get("name")
-        if dataset_file and dataset_name:
-            process_dataset(dataset_file, target_json, dataset_name)
+    dataset_info_file = args.dataset_file
+    dataset_name = args.dataset_name
+    process_dataset(dataset_info_file, target_json, dataset_name)
 
 
 if __name__ == "__main__":
