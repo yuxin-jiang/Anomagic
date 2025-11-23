@@ -167,7 +167,7 @@ if __name__ == "__main__":
         'BTech': '/home/jiangyuxin/CODE/Datasets/BTech/dataset_info_1.json',
         'eyecandies_preprocessed': '/home/jiangyuxin/CODE/Datasets/eyecandies_preprocessed/dataset_info_1.json',
         'MPDD': '/home/jiangyuxin/CODE/Datasets/MPDD/dataset_info_1.json',
-        'mvtec': '/home/jiangyuxin/CODE/Datasets/mvtec/dataset_info_1.json',
+        # 'mvtec': '/home/jiangyuxin/CODE/Datasets/mvtec/dataset_info_1.json',
         'MTD': '/home/jiangyuxin/CODE/Datasets/MTD/dataset_info_1.json',
         'mvtec3d': '/home/jiangyuxin/CODE/Datasets/mvtec3d/dataset_info_1.json',
         'KolektorSDD2': '/home/jiangyuxin/CODE/Datasets/KolektorSDD2/dataset_info_1.json',
@@ -175,7 +175,7 @@ if __name__ == "__main__":
         'mvtec_ad_2': '/home/jiangyuxin/CODE/Datasets/mvtec_ad_2/dataset_info_1.json',
         'DAGM_anomaly_detection': '/home/jiangyuxin/CODE/Datasets/DAGM_anomaly_detection/dataset_info_1.json',
         'MANTA_TINY_256': '/home/jiangyuxin/CODE/Datasets/MANTA_TINY_256/dataset_info_1.json',
-        'VisA_20220922': '/home/jiangyuxin/CODE/Datasets/VisA_20220922/dataset_info_1.json',
+        # 'VisA_20220922': '/home/jiangyuxin/CODE/Datasets/VisA_20220922/dataset_info_1.json',
     }
     # Check if each path exists
     for dataset_name, path in dataset_paths.items():
