@@ -70,7 +70,8 @@ Activate the environment:
 ```bash
 conda activate Anomagic
 ```
-## Download Models
+
+## 📥 Download Models
 
 You can download the required pretrained models from [here](https://huggingface.co/h94/IP-Adapter). To run the training script, you should also download the following models and place them in the specified directories:
 
@@ -141,7 +142,7 @@ Download the pretrained checkpoints for the Anomagic model. These files are host
 **Usage**:
 - Download the files to the project's root `checkpoint/` folder (create it if it doesn't exist).
 - These pretrained weights can be used directly for inference without further training.
-- 
+  
 **Note**:
 - These weights are compatible with the Diffusers library (v0.21+). For training, load them in `Anomagic_train.py` to fine-tune on custom datasets.
 
