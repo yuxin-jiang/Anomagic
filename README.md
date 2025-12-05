@@ -44,7 +44,7 @@
 Try the live demo on Hugging Face Spaces:  
 
 [![Hugging Face Demo](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/yuxinjiang11/Anomagic)  
-![Demo Preview](https://github.com/yuxin-jiang/Anomagic/static/images/demo.png)  
+![Demo Preview](static/images/demo.png)  
 *Click the badge or image to open the interactive interface on Hugging Face.*
 
 ## 🏭 Industrial Visual Anomaly Detection Datasets (AnomVerse)
