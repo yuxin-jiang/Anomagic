@@ -141,7 +141,8 @@ Download the pretrained checkpoints for the Anomagic model. These files are host
 **Usage**:
 - Download the files to the project's root `checkpoint/` folder (create it if it doesn't exist).
 - These pretrained weights can be used directly for inference without further training. 
-- **Note**: These weights are compatible with the Diffusers library (v0.21+). For training, load them in `Anomagic_train.py` to fine-tune on custom datasets.
+**Note**:
+- These weights are compatible with the Diffusers library (v0.21+). For training, load them in `Anomagic_train.py` to fine-tune on custom datasets.
 
 Repository: [Anomagic Checkpoints](https://huggingface.co/yuxinjiang11/Anomagic_model/tree/main/checkpoint)
 
