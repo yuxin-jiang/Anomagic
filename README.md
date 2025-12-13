@@ -48,9 +48,9 @@ Try the live demo on Hugging Face Spaces:
 
 **Note**: Click the badge or image to open the interactive interface on Hugging Face.
 
-### 🎮 Anomaly Generation Methods
+### 📚 Anomaly Generation Methods (Reference Library)
 Provides a hierarchical taxonomy of key papers on anomaly generation methods, surpassing flat lists with fine-grained subcategories that delineate emerging hotspots.  
-  [GitHub Repository](https://github.com/yuxin-jiang/Awesome-Anomaly-Generation)
+[GitHub Repository](https://github.com/yuxin-jiang/Awesome-Anomaly-Generation)
   
 ## 🏭 Industrial Visual Anomaly Detection Datasets (AnomVerse)
 
