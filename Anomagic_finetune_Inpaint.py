@@ -274,25 +274,25 @@ def parse_args():
     parser.add_argument(
         "--data_json_file",
         type=str,
-        default="/home/jiangyuxin/CODE/Datasets/merged_ad_datasets_cover1_copped.json",
+        default="",
         help="Training data JSON file path",
     )
     parser.add_argument(
         "--datasets_root",
         type=str,
-        default="/home/jiangyuxin/CODE/Datasets",
+        default="",
         help="Root directory for datasets",
     )
     parser.add_argument(
         "--image_encoder_path",
         type=str,
-        default='/home/jiangyuxin/CODE/My_paper/Anomagic/models/image_encoder/',
+        default="",
         help="Path to CLIP image encoder",
     )
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="/home/jiangyuxin/CODE/My_paper/Anomagic/sd-ip_adapter_short_text_cover1_copped",
+        default="",
         help="The output directory where the model predictions and checkpoints will be written.",
     )
     parser.add_argument(
