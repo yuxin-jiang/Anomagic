@@ -123,6 +123,7 @@ After training, process the weights using the `Anomagic_weight.py` files in the 
 
 ### 4. Training/Finetuning Inpainting Model with Anomagic_finetune_Inpaint.py
 **Coming soon**...
+
 If you want to train or finetune the inpainting model, use the `Anomagic_finetune_Inpaint.py` script instead. This script supports three finetune modes via the `--finetune_mode` parameter:
 ```bash
 python Anomagic_finetune_Inpaint.py \
