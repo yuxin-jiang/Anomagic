@@ -534,13 +534,11 @@ def main():
                 anomagic_save_path = os.path.join(checkpoint_dir, f"anomagic-{global_step}.bin")
                 attention_module_save_path = os.path.join(checkpoint_dir, f"attention_module-{global_step}.bin")
 
-                # 统一保存完整 state_dict
                 torch.save(anomagic_model.state_dict(), anomagic_save_path)
                 torch.save(attention_module.state_dict(), attention_module_save_path)
 
             begin = time.perf_counter()
 
-    # 训练结束后的最终保存（同样使用完整 state_dict）
     if accelerator.is_main_process:
         checkpoint_dir = os.path.join(args.output_dir, f"checkpoint-{global_step}")
         os.makedirs(checkpoint_dir, exist_ok=True)
@@ -552,4 +550,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
