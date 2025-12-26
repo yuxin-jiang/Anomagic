@@ -190,7 +190,7 @@ python Anomagic_test.py \
 - `--dataset_base`: Directory of normal images to inject anomalies into.
 - `--mask_base`: Path to masks from Step 6.
 - `--output_base`: Directory for generated anomaly images, masks, and overlays.
-- `--quality_model_path` Path for MetaUAS quality assessment model. Checkpoints]((https://huggingface.co/csgaobb/MetaUAS))
+- `--quality_model_path` Path for MetaUAS quality assessment model. [Checkpoints](https://huggingface.co/csgaobb/MetaUAS)
 
 The script applies quality control (e.g., MetaUAS scores) and saves results in a structured folder (e.g., `abnormal_images/`, `mask_overlays/`).
 
