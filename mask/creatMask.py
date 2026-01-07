@@ -9,13 +9,13 @@ from PIL import Image
 
 
 def generate_adaptive_mask(template, info, max_attempts=100):
-    """
+
     size = (256, 256)
     template_mask = (template == 255)
     best_mask = None
     best_overlap = 0
 
-
+    # 解析配置信息
     width_range = info[0] if isinstance(info, list) and len(info) >= 3 else [0.2, 0.3]
     height_range = info[1] if isinstance(info, list) and len(info) >= 3 else [0.2, 0.3]
     need_rotation = info[2] == "True" if isinstance(info, list) and len(info) >= 3 else True
@@ -32,40 +32,34 @@ def generate_adaptive_mask(template, info, max_attempts=100):
         num_anomalies = random.randint(1, 3)
 
         for idx in range(num_anomalies):
-            # 选择网格位置 (确保均匀分布)
+
             if idx < len(grid_positions):
                 grid_i, grid_j = grid_positions[idx]
                 used_positions.add((grid_i, grid_j))
             else:
-                # 如果异常数量超过网格数，随机选择位置
+
                 grid_i, grid_j = random.randint(0, grid_size - 1), random.randint(0, grid_size - 1)
 
-            # 计算基于网格的初始位置
             cell_width = size[0] // grid_size
             cell_height = size[1] // grid_size
             base_x = grid_i * cell_width
             base_y = grid_j * cell_height
 
-            # 在网格单元内随机微调位置
             x_offset = random.randint(0, cell_width // 3)
             y_offset = random.randint(0, cell_height // 3)
             x = min(base_x + x_offset, size[0] - 10)
             y = min(base_y + y_offset, size[1] - 10)
 
-            # 随机选择形状类型
             shape_type = random.choice(['rectangle', 'ellipse', 'polygon', 'irregular'])
 
-            # 更小的随机尺寸
             width = random.randint(int(width_range[0] * 256), int(width_range[1] * 256))
             height = random.randint(int(height_range[0] * 256), int(height_range[1] * 256))
             width = max(width, 8)
             height = max(height, 8)
 
-            # 确保不超出边界
             x = max(0, min(x, size[0] - width))
             y = max(0, min(y, size[1] - height))
 
-            # 生成基础形状
             if shape_type == 'rectangle':
                 cv2.rectangle(mask, (x, y), (x + width, y + height), 255, -1)
             elif shape_type == 'ellipse':
@@ -101,14 +95,12 @@ def generate_adaptive_mask(template, info, max_attempts=100):
                 _, temp_mask = cv2.threshold(temp_mask, 50, 255, cv2.THRESH_BINARY)
                 mask = cv2.bitwise_or(mask, temp_mask)
 
-            # 随机旋转
             if need_rotation and random.random() > 0.5:
                 center = (x + width // 2, y + height // 2)
                 angle = random.randint(0, 180)
                 M = cv2.getRotationMatrix2D(center, angle, 1.0)
                 mask = cv2.warpAffine(mask, M, size, flags=cv2.INTER_NEAREST)
 
-        # 确保掩码与模板重叠
         final_mask = np.where((mask == 255) & template_mask, 255, 0).astype(np.uint8)
         overlap_ratio = np.count_nonzero(final_mask) / max(1, np.count_nonzero(mask))
 
@@ -119,7 +111,6 @@ def generate_adaptive_mask(template, info, max_attempts=100):
         if overlap_ratio >= 0.6:
             break
 
-    # 保底方案
     if best_mask is None or np.count_nonzero(best_mask) == 0:
         best_mask = np.zeros(size, dtype=np.uint8)
         for _ in range(10):
@@ -130,7 +121,6 @@ def generate_adaptive_mask(template, info, max_attempts=100):
             cv2.rectangle(best_mask, (x, y), (x + width, y + height), 255, -1)
         best_mask = np.where((best_mask == 255) & template_mask, 255, 0).astype(np.uint8)
 
-    # 随机形态学操作
     if random.random() > 0.5:
         kernel_size = random.randint(1, 5)
         kernel = np.ones((kernel_size, kernel_size), np.uint8)
@@ -143,11 +133,10 @@ def generate_adaptive_mask(template, info, max_attempts=100):
 
 
 def process_images(data_path, output_root, json_path, dataset_type="mvtec"):
-    """处理所有图像并生成mask"""
+
     with open(json_path, "r") as file:
         mask_info = json.load(file)
 
-    # 根据数据集类型选择类别
     if dataset_type == "mvtec":
         classes = [
             "bottle", "cable", "capsule", "carpet", "grid",
@@ -160,13 +149,13 @@ def process_images(data_path, output_root, json_path, dataset_type="mvtec"):
             "macaroni1", "macaroni2", "pcb1", "pcb2", "pcb3", "pcb4", "pipe_fryum"
         ]
     else:
-        # 如果未指定，使用所有在json中存在的类别
+
         classes = list(mask_info.keys())
-        print(f"未指定数据集类型，使用JSON中所有类别: {len(classes)}个类别")
+        print(f"No dataset type specified, using all categories from JSON: {len(classes)} categories")
 
     for c in classes:
         if c not in mask_info:
-            print(f"警告: 类别 '{c}' 不在JSON配置中，跳过")
+            print(f"Warning: Category '{c}' is not in the JSON configuration, skipping")
             continue
 
         anomaly_types = list(mask_info[c].keys())
@@ -192,11 +181,11 @@ def process_images(data_path, output_root, json_path, dataset_type="mvtec"):
                     break
 
             if root_path is None:
-                print(f"无法找到类别 '{c}' 的正常图像目录，跳过")
+                print(f"Normal image directory for category '{c}' not found, skipping")
                 continue
 
         if not os.path.exists(root_path):
-            print(f"目录不存在: {root_path}")
+            print(f"Directory does not exist: {root_path}")
             continue
 
         image_files = [f for f in os.listdir(root_path) if f.lower().endswith(('.jpg', '.png', '.jpeg', '.bmp'))]
@@ -207,12 +196,11 @@ def process_images(data_path, output_root, json_path, dataset_type="mvtec"):
 
             img = cv2.imread(img_path)
             if img is None:
-                print(f"无法读取图片: {img_path}")
+                print(f"Failed to read image: {img_path}")
                 continue
 
             img = cv2.resize(img, (256, 256))
 
-            # 创建模板
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             ret, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             if thresh[0][0] == 255:
@@ -220,7 +208,6 @@ def process_images(data_path, output_root, json_path, dataset_type="mvtec"):
             kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
             closing = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
-            # 为每种异常类型生成掩码
             for anomaly_type in anomaly_types:
                 object_dir = os.path.join(output_root, c)
                 defect_dir = os.path.join(object_dir, anomaly_type, name)
@@ -251,9 +238,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    # 确保输出目录存在
     os.makedirs(args.output_root, exist_ok=True)
-
-    # 处理所有图像
 
     process_images(args.data_path, args.output_root, args.json_path, args.dataset_type)
