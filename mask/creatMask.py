@@ -3,224 +3,263 @@ import cv2
 import numpy as np
 import json
 import random
-from PIL import Image
-import matplotlib.pyplot as plt
+import math
 import argparse
+from PIL import Image
 
 
-def extract_white_regions(mask):
-    """Extract white regions from mask, return contours and rotated rectangle list"""
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    regions = []
-
-    for contour in contours:
-        # Calculate minimum rotated rectangle
-        rect = cv2.minAreaRect(contour)
-        regions.append(rect)
-
-    return regions
-
-
-def scale_regions(regions, img_size=(256, 256)):
-    """Randomly scale the extracted white regions"""
-    new_regions = []
-
-    for region in regions:
-        (cx, cy), (width, height), angle = region
-
-        # Random scaling (300% to 500%)
-        scale_factor = random.uniform(3, 5)
-        new_width = max(5, width * scale_factor)  # Ensure minimum size
-        new_height = max(5, height * scale_factor)  # Ensure minimum size
-
-        new_regions.append(((cx, cy), (new_width, new_height), angle))
-
-    return new_regions
-
-
-def rotate_and_translate_regions(regions, img_size=(256, 256)):
-    """Randomly rotate and translate the extracted white regions"""
-    new_regions = []
-
-    for region in regions:
-        (cx, cy), (width, height), angle = region
-
-        # Random rotation (-45° to 45°)
-        new_angle = angle + random.uniform(-45, 45)
-
-        # Random translation (±20 pixels)
-        tx = random.randint(-20, 20)
-        ty = random.randint(-20, 20)
-        new_cx = min(max(cx + tx, 0), img_size[0])
-        new_cy = min(max(cy + ty, 0), img_size[1])
-
-        new_regions.append(((new_cx, new_cy), (width, height), new_angle))
-
-    return new_regions
-
-
-def calculate_overlap_ratio(new_mask, original_mask):
-    """Calculate overlap ratio between two masks"""
-    intersection = np.logical_and(new_mask == 255, original_mask == 255).sum()
-    new_area = np.count_nonzero(new_mask)
-
-    if new_area == 0:
-        return 0
-
-    return intersection / new_area
-
-
-def generate_mask_from_existing(template_mask, max_attempts=50, overlap_threshold=0.3):
+def generate_adaptive_mask(template, info, max_attempts=100):
     """
-    Generate new mask from existing Anomaly_mask by scaling, rotating, and translating white regions
-    Parameters:
-        template_mask: Original Anomaly_mask (numpy array)
-        max_attempts: Maximum attempts
-        overlap_threshold: Overlap ratio threshold
+    生成更多异常数量且分布更均匀的复杂掩码
+    参数:
+        template: 模板图像(256x256 numpy数组)
+        info: 包含尺寸范围和旋转标志的配置信息 [width_range, height_range, need_rotation]
+        max_attempts: 最大尝试次数，防止无限循环
     """
-    img_size = template_mask.shape[:2]
-
-    # Set pixels greater than 0 to 255
-    template_mask = np.where(template_mask > 0, 255, 0).astype(np.uint8)
-
-    # Extract white regions
-    regions = extract_white_regions(template_mask)
-
-    # If no regions detected, return empty mask
-    if not regions:
-        return np.zeros(img_size, dtype=np.uint8)
-
+    size = (256, 256)
+    template_mask = (template == 255)
     best_mask = None
     best_overlap = 0
 
+    # 解析配置信息
+    width_range = info[0] if isinstance(info, list) and len(info) >= 3 else [0.2, 0.3]
+    height_range = info[1] if isinstance(info, list) and len(info) >= 3 else [0.2, 0.3]
+    need_rotation = info[2] == "True" if isinstance(info, list) and len(info) >= 3 else True
+
+    # 生成网格点用于更均匀分布
+    grid_size = 6  # 6x6网格
+    grid_positions = [(i, j) for i in range(grid_size) for j in range(grid_size)]
+    random.shuffle(grid_positions)
+
     for attempt in range(max_attempts):
-        # Randomly scale regions
-        scaled_regions = scale_regions(regions, img_size)
+        mask = np.zeros(size, dtype=np.uint8)
+        used_positions = set()
 
-        # Randomly rotate and translate scaled regions
-        new_regions = rotate_and_translate_regions(scaled_regions, img_size)
+        # 显著增加异常区域数量 (15-25个)
+        num_anomalies = random.randint(1, 3)
 
-        # Create new mask
-        new_mask = np.zeros(img_size, dtype=np.uint8)
-        for region in new_regions:
-            box = cv2.boxPoints(region)
-            box = np.int0(box)
-            cv2.fillPoly(new_mask, [box], 255)
+        for idx in range(num_anomalies):
+            # 选择网格位置 (确保均匀分布)
+            if idx < len(grid_positions):
+                grid_i, grid_j = grid_positions[idx]
+                used_positions.add((grid_i, grid_j))
+            else:
+                # 如果异常数量超过网格数，随机选择位置
+                grid_i, grid_j = random.randint(0, grid_size - 1), random.randint(0, grid_size - 1)
 
-        # Calculate overlap ratio
-        overlap_ratio = calculate_overlap_ratio(new_mask, template_mask)
+            # 计算基于网格的初始位置
+            cell_width = size[0] // grid_size
+            cell_height = size[1] // grid_size
+            base_x = grid_i * cell_width
+            base_y = grid_j * cell_height
 
-        # Update best mask
+            # 在网格单元内随机微调位置
+            x_offset = random.randint(0, cell_width // 3)
+            y_offset = random.randint(0, cell_height // 3)
+            x = min(base_x + x_offset, size[0] - 10)
+            y = min(base_y + y_offset, size[1] - 10)
+
+            # 随机选择形状类型
+            shape_type = random.choice(['rectangle', 'ellipse', 'polygon', 'irregular'])
+
+            # 更小的随机尺寸
+            width = random.randint(int(width_range[0] * 256), int(width_range[1] * 256))
+            height = random.randint(int(height_range[0] * 256), int(height_range[1] * 256))
+            width = max(width, 8)
+            height = max(height, 8)
+
+            # 确保不超出边界
+            x = max(0, min(x, size[0] - width))
+            y = max(0, min(y, size[1] - height))
+
+            # 生成基础形状
+            if shape_type == 'rectangle':
+                cv2.rectangle(mask, (x, y), (x + width, y + height), 255, -1)
+            elif shape_type == 'ellipse':
+                center = (x + width // 2, y + height // 2)
+                axes = (width // 2, height // 2)
+                angle = random.randint(0, 180) if need_rotation else 0
+                cv2.ellipse(mask, center, axes, angle, 0, 360, 255, -1)
+            elif shape_type == 'polygon':
+                num_vertices = random.randint(3, 6)
+                vertices = []
+                center_x, center_y = x + width // 2, y + height // 2
+                radius_x, radius_y = width // 2, height // 2
+                for i in range(num_vertices):
+                    angle = 2 * math.pi * i / num_vertices
+                    offset_x = radius_x * math.cos(angle) * random.uniform(0.7, 1.3)
+                    offset_y = radius_y * math.sin(angle) * random.uniform(0.7, 1.3)
+                    vertices.append([center_x + offset_x, center_y + offset_y])
+                vertices = np.array(vertices, dtype=np.int32)
+                cv2.fillPoly(mask, [vertices], 255)
+            elif shape_type == 'irregular':
+                temp_mask = np.zeros(size, dtype=np.uint8)
+                num_points = random.randint(4, 6)
+                points = []
+                for _ in range(num_points):
+                    px = x + random.randint(0, width)
+                    py = y + random.randint(0, height)
+                    points.append((px, py))
+                points = np.array(points, dtype=np.int32)
+                cv2.polylines(temp_mask, [points], isClosed=True, color=255, thickness=random.randint(2, 5))
+                contours, _ = cv2.findContours(temp_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                cv2.drawContours(temp_mask, contours, -1, 255, -1)
+                temp_mask = cv2.GaussianBlur(temp_mask, (9, 9), 0)
+                _, temp_mask = cv2.threshold(temp_mask, 50, 255, cv2.THRESH_BINARY)
+                mask = cv2.bitwise_or(mask, temp_mask)
+
+            # 随机旋转
+            if need_rotation and random.random() > 0.5:
+                center = (x + width // 2, y + height // 2)
+                angle = random.randint(0, 180)
+                M = cv2.getRotationMatrix2D(center, angle, 1.0)
+                mask = cv2.warpAffine(mask, M, size, flags=cv2.INTER_NEAREST)
+
+        # 确保掩码与模板重叠
+        final_mask = np.where((mask == 255) & template_mask, 255, 0).astype(np.uint8)
+        overlap_ratio = np.count_nonzero(final_mask) / max(1, np.count_nonzero(mask))
+
         if overlap_ratio > best_overlap:
-            best_mask = new_mask
+            best_mask = final_mask
             best_overlap = overlap_ratio
 
-        # Early return if threshold reached
-        if overlap_ratio >= overlap_threshold:
-            return new_mask
+        if overlap_ratio >= 0.6:
+            break
 
-    # Return best result if no qualifying mask found
-    return best_mask if best_mask is not None else np.zeros(img_size, dtype=np.uint8)
+    # 保底方案
+    if best_mask is None or np.count_nonzero(best_mask) == 0:
+        best_mask = np.zeros(size, dtype=np.uint8)
+        for _ in range(10):
+            x = random.randint(20, 220)
+            y = random.randint(20, 220)
+            width = random.randint(10, 30)
+            height = random.randint(10, 30)
+            cv2.rectangle(best_mask, (x, y), (x + width, y + height), 255, -1)
+        best_mask = np.where((best_mask == 255) & template_mask, 255, 0).astype(np.uint8)
+
+    # 随机形态学操作
+    if random.random() > 0.5:
+        kernel_size = random.randint(1, 5)
+        kernel = np.ones((kernel_size, kernel_size), np.uint8)
+        if random.random() > 0.5:
+            best_mask = cv2.erode(best_mask, kernel, iterations=1)
+        else:
+            best_mask = cv2.dilate(best_mask, kernel, iterations=1)
+
+    return best_mask
 
 
-def process_images(data_path, output_root, json_path):
-    """Process all images and generate new masks from existing Anomaly_mask, while saving original masks"""
+def process_images(data_path, output_root, json_path, dataset_type="mvtec"):
+    """处理所有图像并生成mask"""
     with open(json_path, "r") as file:
         mask_info = json.load(file)
 
-    classes = ["candle", "capsules", "cashew", "chewinggum", "fryum",
-               "macaroni1", "macaroni2", "pcb1", "pcb2", "pcb3", "pcb4", "pipe_fryum"]
+    # 根据数据集类型选择类别
+    if dataset_type == "mvtec":
+        classes = [
+            "bottle", "cable", "capsule", "carpet", "grid",
+            "hazelnut", "leather", "metal_nut", "pill", "screw",
+            "tile", "toothbrush", "transistor", "wood", "zipper"
+        ]
+    elif dataset_type == "visa":
+        classes = [
+            "candle", "capsules", "cashew", "chewinggum", "fryum",
+            "macaroni1", "macaroni2", "pcb1", "pcb2", "pcb3", "pcb4", "pipe_fryum"
+        ]
+    else:
+        # 如果未指定，使用所有在json中存在的类别
+        classes = list(mask_info.keys())
+        print(f"未指定数据集类型，使用JSON中所有类别: {len(classes)}个类别")
 
     for c in classes:
-        print(f"Processing category: {c}")
+        if c not in mask_info:
+            print(f"警告: 类别 '{c}' 不在JSON配置中，跳过")
+            continue
+
         anomaly_types = list(mask_info[c].keys())
 
-        # Normal images directory
-        normal_dir = os.path.join(data_path, c, "Data/Images/Normal")
-        if not os.path.exists(normal_dir):
-            print(f"Normal images directory does not exist: {normal_dir}")
+        # 根据数据集类型确定正常图像的路径
+        if dataset_type == "mvtec":
+            root_path = os.path.join(data_path, c, "train/good")
+        elif dataset_type == "visa":
+            root_path = os.path.join(data_path, c, "Data/Images/Normal")
+        else:
+            # 尝试自动检测路径
+            possible_paths = [
+                os.path.join(data_path, c, "train/good"),
+                os.path.join(data_path, c, "Data/Images/Normal"),
+                os.path.join(data_path, c, "normal"),
+                os.path.join(data_path, c, "good")
+            ]
+
+            root_path = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    root_path = path
+                    break
+
+            if root_path is None:
+                print(f"无法找到类别 '{c}' 的正常图像目录，跳过")
+                continue
+
+        if not os.path.exists(root_path):
+            print(f"目录不存在: {root_path}")
             continue
 
-        # Anomaly_mask directory
-        anomaly_mask_dir = os.path.join(data_path, c, "Data/Masks/Anomaly")
-        if not os.path.exists(anomaly_mask_dir):
-            print(f"Anomaly_mask directory does not exist: {anomaly_mask_dir}")
-            continue
-
-        image_files = [f for f in os.listdir(normal_dir) if f.lower().endswith(('.jpg', '.JPG', '.png'))]
+        image_files = [f for f in os.listdir(root_path) if f.lower().endswith(('.jpg', '.png', '.jpeg', '.bmp'))]
 
         for img_name in image_files:
-            img_path = os.path.join(normal_dir, img_name)
+            img_path = os.path.join(root_path, img_name)
             name = os.path.splitext(img_name)[0]
 
-            # Read normal image (for size)
             img = cv2.imread(img_path)
             if img is None:
-                print(f"Cannot read image: {img_path}")
+                print(f"无法读取图片: {img_path}")
                 continue
 
             img = cv2.resize(img, (256, 256))
-            height, width = img.shape[:2]
 
+            # 创建模板
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            ret, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            if thresh[0][0] == 255:
+                thresh = cv2.bitwise_not(thresh)
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+            closing = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+            # 为每种异常类型生成掩码
             for anomaly_type in anomaly_types:
-                # Build Anomaly_mask subdirectory path
-                type_mask_dir = os.path.join(anomaly_mask_dir)
-                if not os.path.exists(type_mask_dir):
-                    print(f"Anomaly_type directory does not exist: {type_mask_dir}")
-                    continue
-
-                # Get all mask files under this type
-                mask_files = [f for f in os.listdir(type_mask_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-                if not mask_files:
-                    print(f"No Anomaly_mask found: {type_mask_dir}")
-                    continue
-
-                # Generate masks for each normal image
                 object_dir = os.path.join(output_root, c)
                 defect_dir = os.path.join(object_dir, anomaly_type, name)
                 os.makedirs(defect_dir, exist_ok=True)
 
-                # Generate 5 different masks
-                for i in range(1):
-                    # Randomly select one Anomaly_mask as template
-                    template_mask_path = os.path.join(type_mask_dir, random.choice(mask_files))
-                    template_mask = cv2.imread(template_mask_path, cv2.IMREAD_GRAYSCALE)
-
-                    if template_mask is None:
-                        print(f"Cannot read template mask: {template_mask_path}")
-                        continue
-
-                    # Resize template to match normal image
-                    original_template = cv2.resize(template_mask, (width, height))
-                    original_template = np.where(original_template > 0, 255, 0).astype(np.uint8)
-
-                    # Save original mask
-                    # original_save_path = os.path.join(defect_dir, f"original_{i}.png")
-                    # cv2.imwrite(original_save_path, original_template)
-                    # print(f"Saved original mask to: {original_save_path}")
-
-                    # Generate new mask
-                    new_mask = generate_mask_from_existing(original_template)
-                    new_mask = np.where(new_mask > 0, 255, 0).astype(np.uint8)
-                    # Save new mask
-                    new_save_path = os.path.join(defect_dir, f"{i}.png")
-                    cv2.imwrite(new_save_path, new_mask)
-                    print(f"Generated mask {i} for {anomaly_type} and saved to: {new_save_path}")
+                # 生成5种不同的mask
+                for i in range(5):
+                    save_path = os.path.join(defect_dir, f"{i}.png")
+                    mask = generate_adaptive_mask(closing, mask_info[c][anomaly_type])
+                    cv2.imwrite(save_path, mask)
+                    print(f"Generated mask {i} for {anomaly_type} at {save_path}")
 
 
-def main():
+if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Generate masks from existing anomaly masks")
-    parser.add_argument("--json_path", type=str, required=True, help="Path to JSON file with mask info")
-    parser.add_argument("--data_path", type=str, required=True, help="Path to data directory")
-    parser.add_argument("--output_root", type=str, required=True, help="Output root directory")
+    parser.add_argument("--json_path", type=str, required=False, default="visa.json",
+                        help="Path to JSON file with mask info")
+    parser.add_argument("--data_path", type=str, required=False,
+                        default="",
+                        help="Path to data directory")
+    parser.add_argument("--output_root", type=str, required=False,
+                        default="",
+                        help="Output root directory")
+    parser.add_argument("--dataset_type", type=str, required=False,
+                        default="visa", choices=["mvtec", "visa"],
+                        help="Dataset type: 'mvtec' or 'visa'")
+
+
     args = parser.parse_args()
 
-    # Ensure output directory exists
+    # 确保输出目录存在
     os.makedirs(args.output_root, exist_ok=True)
 
-    # Process all images
-    process_images(args.data_path, args.output_root, args.json_path)
-
-
-if __name__ == "__main__":
-    main()
+    # 处理所有图像
+    process_images(args.data_path, args.output_root, args.json_path, args.dataset_type)
