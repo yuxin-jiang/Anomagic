@@ -15,7 +15,6 @@ def generate_adaptive_mask(template, info, max_attempts=100):
     best_mask = None
     best_overlap = 0
 
-    # 解析配置信息
     width_range = info[0] if isinstance(info, list) and len(info) >= 3 else [0.2, 0.3]
     height_range = info[1] if isinstance(info, list) and len(info) >= 3 else [0.2, 0.3]
     need_rotation = info[2] == "True" if isinstance(info, list) and len(info) >= 3 else True
