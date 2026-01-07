@@ -10,24 +10,18 @@ from PIL import Image
 
 def generate_adaptive_mask(template, info, max_attempts=100):
     """
-    生成更多异常数量且分布更均匀的复杂掩码
-    参数:
-        template: 模板图像(256x256 numpy数组)
-        info: 包含尺寸范围和旋转标志的配置信息 [width_range, height_range, need_rotation]
-        max_attempts: 最大尝试次数，防止无限循环
-    """
     size = (256, 256)
     template_mask = (template == 255)
     best_mask = None
     best_overlap = 0
 
-    # 解析配置信息
+
     width_range = info[0] if isinstance(info, list) and len(info) >= 3 else [0.2, 0.3]
     height_range = info[1] if isinstance(info, list) and len(info) >= 3 else [0.2, 0.3]
     need_rotation = info[2] == "True" if isinstance(info, list) and len(info) >= 3 else True
 
-    # 生成网格点用于更均匀分布
-    grid_size = 6  # 6x6网格
+
+    grid_size = 6
     grid_positions = [(i, j) for i in range(grid_size) for j in range(grid_size)]
     random.shuffle(grid_positions)
 
@@ -35,7 +29,6 @@ def generate_adaptive_mask(template, info, max_attempts=100):
         mask = np.zeros(size, dtype=np.uint8)
         used_positions = set()
 
-        # 显著增加异常区域数量 (15-25个)
         num_anomalies = random.randint(1, 3)
 
         for idx in range(num_anomalies):
@@ -262,4 +255,5 @@ if __name__ == '__main__':
     os.makedirs(args.output_root, exist_ok=True)
 
     # 处理所有图像
+
     process_images(args.data_path, args.output_root, args.json_path, args.dataset_type)
