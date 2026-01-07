@@ -159,13 +159,12 @@ def process_images(data_path, output_root, json_path, dataset_type="mvtec"):
 
         anomaly_types = list(mask_info[c].keys())
 
-        # 根据数据集类型确定正常图像的路径
         if dataset_type == "mvtec":
             root_path = os.path.join(data_path, c, "train/good")
         elif dataset_type == "visa":
             root_path = os.path.join(data_path, c, "Data/Images/Normal")
         else:
-            # 尝试自动检测路径
+
             possible_paths = [
                 os.path.join(data_path, c, "train/good"),
                 os.path.join(data_path, c, "Data/Images/Normal"),
@@ -212,7 +211,6 @@ def process_images(data_path, output_root, json_path, dataset_type="mvtec"):
                 defect_dir = os.path.join(object_dir, anomaly_type, name)
                 os.makedirs(defect_dir, exist_ok=True)
 
-                # 生成5种不同的mask
                 for i in range(5):
                     save_path = os.path.join(defect_dir, f"{i}.png")
                     mask = generate_adaptive_mask(closing, mask_info[c][anomaly_type])
